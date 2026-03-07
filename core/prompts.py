@@ -3,6 +3,9 @@ System prompt and prompt-building helpers for the Hebrew grocery categorizer.
 Stored as constants; Layer 2 appends user-specific examples via helper.
 """
 
+# Fallback when OpenAI is unavailable (§7 Option B). Hebrew.
+FALLBACK_CATEGORY: str = "מוצרים יבשים ושימורים"
+
 # The 12 allowed categories (Hebrew). Used for validation and prompt.
 ALLOWED_CATEGORIES: tuple[str, ...] = (
     "ניקיון",
