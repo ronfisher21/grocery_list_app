@@ -1,0 +1,22 @@
+---
+description: General overview of the Hebrew Grocery App and its core purpose.
+globs: **/*
+alwaysApply: true
+---
+# Project: Hebrew Grocery App (S25/A56)
+
+## The "Meaning" of this App
+This is a shared, real-time grocery synchronization tool for a Samsung S25 and Samsung A56.
+The goal is to allow two users to add items in Hebrew and have them automatically 
+categorized using AI to make grocery shopping organized and fast.
+
+## High-Level Architecture
+- **Brain (/core):** Python logic for Hebrew classification (Managed in Cursor).
+- **Body (/app):** React Native frontend (Managed by Claude Code agents).
+- **Memory:** Supabase real-time database.
+
+## Core Principles
+1. **Hebrew First:** All user-facing strings and classification must be in Hebrew. All app compnents must be in hebrew.
+2. **Zero-Cost:** Prioritize free tiers (GPT-4o mini) and local execution.
+3. **Simplicity:** The UI should be a simple "Chat-to-List" flow.
+4. **fast:** Minimal latency is key. 
