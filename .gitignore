@@ -2,3 +2,4 @@
 .cursorrules
 .venv/
 core/__pycache__/
+tests/__pycache__/
