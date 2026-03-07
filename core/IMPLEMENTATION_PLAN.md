@@ -197,8 +197,7 @@ Pin versions in `requirements.txt` or `pyproject.toml`.
 4. **Categorizer core** – Layer 1 (cache) → Layer 2 (prompt + LLM) → fallback; use OpenAI with system prompt from §3.
 5. **FastAPI** – Models, `POST /categorize`, optional `POST /categorize/override`.
 6. **Feedback loop** – Upsert on correction (from API or from app to Supabase).
-7. **Tests** – Unit + integration as in §10.
-8. **Rename** – `categroizer.py` → `categorizer.py` and fix references.
+
 
 ---
 
