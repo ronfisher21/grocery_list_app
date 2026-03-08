@@ -13,6 +13,7 @@ from core.models import CategorizeRequest, CategorizeResponse, OverrideRequest, 
 from core.normalize import normalize
 from core.overrides import upsert
 from core.prompts import ALLOWED_CATEGORIES
+from core.settings import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,15 @@ app = FastAPI(
 )
 
 
+@app.on_event("startup")
+def _log_override_backend():
+    s = get_settings()
+    logger.info(
+        "Override backend: %s (PROJECT_URL and SERVICE_ROLE_KEY)",
+        "Supabase" if s.has_supabase else "in-memory (overrides will NOT persist from app)",
+    )
+
+
 @app.post("/categorize", response_model=CategorizeResponse)
 def post_categorize(body: CategorizeRequest) -> CategorizeResponse:
     """
@@ -30,6 +40,7 @@ def post_categorize(body: CategorizeRequest) -> CategorizeResponse:
 
     Uses Layer 1 (cache) then Layer 2 (LLM with few-shot); returns category only.
     """
+    logger.info("POST /categorize item_name=%r", body.item_name)
     category = categorize(body.item_name)
     return CategorizeResponse(category=category)
 

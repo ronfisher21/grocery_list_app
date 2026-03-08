@@ -1,8 +1,10 @@
 """
 Manual overrides: get-by-key (Layer 1 cache), get-5-latest (Layer 2), upsert (Layer 3).
 
-Uses Supabase table `manual_overrides` when PROJECT_URL and SERVICE_ROLE_KEY are set;
-falls back to in-memory store otherwise (e.g. tests or before DB is ready).
+Uses Supabase table `manual_overrides` when PROJECT_URL and SERVICE_ROLE_KEY are set
+in the backend environment (same Supabase project as the app). If either is missing,
+the backend falls back to an in-memory store (empty per process), so app-written
+overrides will not be seen by POST /categorize until these are set.
 """
 
 import logging
@@ -48,7 +50,13 @@ def get_by_key(normalized_key: str) -> str | None:
     client = _client()
     if client is None:
         entry = _store.get(normalized_key)
-        return entry[0] if entry else None
+        out = entry[0] if entry else None
+        logger.info(
+            "override get_by_key: in-memory store, key=%r -> %s",
+            normalized_key,
+            out if out else "MISS",
+        )
+        return out
     try:
         r = (
             client.table(TABLE_NAME)
@@ -61,7 +69,17 @@ def get_by_key(normalized_key: str) -> str | None:
         if data and len(data) > 0:
             row = data[0]
             cat = row.get("category") if isinstance(row, dict) else None
-            return str(cat) if isinstance(cat, str) else None
+            out = str(cat) if isinstance(cat, str) else None
+            logger.info(
+                "override get_by_key: Supabase, key=%r -> HIT %r",
+                normalized_key,
+                out,
+            )
+            return out
+        logger.info(
+            "override get_by_key: Supabase, key=%r -> MISS (no row)",
+            normalized_key,
+        )
         return None
     except Exception as e:
         logger.exception("Supabase get_by_key failed: %s", e)
@@ -113,7 +131,7 @@ def upsert(normalized_key: str, category: str) -> None:
 
     Args:
         normalized_key: Output of normalize(item_name).
-        category: One of the 12 allowed Hebrew categories.
+        category: One of the allowed Hebrew categories (see core.prompts.ALLOWED_CATEGORIES).
     """
     if not normalized_key:
         return

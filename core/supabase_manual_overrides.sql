@@ -13,8 +13,16 @@ create index if not exists idx_manual_overrides_last_corrected_at
 
 alter table public.manual_overrides enable row level security;
 
+-- Backend (service_role) reads overrides for Layer 1/2.
 create policy "Service role can manage manual_overrides"
   on public.manual_overrides for all
   to service_role
+  using (true)
+  with check (true);
+
+-- App (anon or authenticated) must be able to write when user corrects a category.
+create policy "App can insert and update manual_overrides"
+  on public.manual_overrides for all
+  to anon, authenticated
   using (true)
   with check (true);

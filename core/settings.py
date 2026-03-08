@@ -3,7 +3,13 @@ Application settings loaded from environment (e.g. .env).
 Uses Pydantic BaseSettings; never hardcodes secrets.
 """
 
+from pathlib import Path
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Resolve .env from project root so it works regardless of CWD when starting uvicorn.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+_ENV_FILE = _PROJECT_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -12,12 +18,12 @@ class Settings(BaseSettings):
     """
 
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=_ENV_FILE,
         env_file_encoding="utf-8",
         extra="ignore",
     )
 
-    openai_api_key: str
+    openai_api_key: str = ""
     project_url: str = ""
     service_role_key: str = ""
 

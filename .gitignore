@@ -4,3 +4,4 @@ app/.env
 .venv/
 core/__pycache__/
 tests/__pycache__/
+app/@core

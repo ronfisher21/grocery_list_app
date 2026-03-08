@@ -43,6 +43,7 @@ Use this exact system prompt for the categorizer:
 - לחם
 - מוצרים לבית
 - אוכל מוכן
+- ירקות ופירות
 
 דוגמאות לסיווג:
 1. קלט: "נוזל לשירותים" -> קטגוריה: ניקיון
@@ -57,6 +58,7 @@ Use this exact system prompt for the categorizer:
 10. קלט: "פיתות" -> קטגוריה: לחם
 11. קלט: "תרבד" -> קטגוריה: מוצרים לבית
 12. קלט: "אורז מוכן" -> קטגוריה: אוכל מוכן
+13. קלט: "עגבניות" -> קטגוריה: ירקות ופירות
 
 הנחיות קריטיות:
 - ענה בשם הקטגוריה בלבד, ללא הסברים וללא סימני פיסוק.
@@ -87,6 +89,7 @@ All logic (cache, RAG-lite, LLM, fallback) lives behind this single entry point.
 ### 5.1 Layer 1: Exact-Match Local Cache
 
 - **Source:** `manual_overrides` table (Supabase or same DB as app).
+- **Backend config:** For the backend to see overrides written by the app, set `PROJECT_URL` and `SERVICE_ROLE_KEY` in the **backend** environment (e.g. root `.env` when running uvicorn). Use the same Supabase project URL as the app; the service role key allows the backend to read `manual_overrides`. If either is missing, the backend uses an in-memory store (empty), so corrections will not be used on the next categorize call.
 - **When:** Before any LLM call.
 - **Logic:**
   1. Normalize `item_name` (see §6).
@@ -128,7 +131,7 @@ The user has previously corrected these items. Follow these patterns over genera
 - **Table:** `manual_overrides` (or equivalent in Supabase).
 - **Columns:**
   - `item_name` (or `item_name_normalized`): string, **unique index** (used for cache lookup).
-  - `category`: string, one of the 12 allowed categories.
+  - `category`: string, one of the allowed categories (see `core.prompts.ALLOWED_CATEGORIES`).
   - `last_corrected_at`: timestamp (for “5 most recent” retrieval).
 - **Deduplication:** Normalize before lookup and before upsert:
   - Trim and collapse whitespace.

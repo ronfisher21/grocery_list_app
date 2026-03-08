@@ -6,7 +6,7 @@ Stored as constants; Layer 2 appends user-specific examples via helper.
 # Fallback when OpenAI is unavailable (§7 Option B). Hebrew.
 FALLBACK_CATEGORY: str = "מוצרים יבשים ושימורים"
 
-# The 12 allowed categories (Hebrew). Used for validation and prompt.
+# Allowed categories (Hebrew). Used for validation and prompt.
 ALLOWED_CATEGORIES: tuple[str, ...] = (
     "ניקיון",
     "היגיינה",
@@ -20,6 +20,7 @@ ALLOWED_CATEGORIES: tuple[str, ...] = (
     "לחם",
     "מוצרים לבית",
     "אוכל מוכן",
+    "ירקות ופירות",
 )
 
 # Exact system prompt for the categorizer (§3 of implementation plan).
@@ -39,6 +40,7 @@ SYSTEM_PROMPT: str = """תפקיד: אתה עוזר חכם לסיווג מוצר
 - לחם
 - מוצרים לבית
 - אוכל מוכן
+- ירקות ופירות
 
 דוגמאות לסיווג:
 1. קלט: "נוזל לשירותים" -> קטגוריה: ניקיון
@@ -53,11 +55,13 @@ SYSTEM_PROMPT: str = """תפקיד: אתה עוזר חכם לסיווג מוצר
 10. קלט: "פיתות" -> קטגוריה: לחם
 11. קלט: "תרבד" -> קטגוריה: מוצרים לבית
 12. קלט: "אורז מוכן" -> קטגוריה: אוכל מוכן
+13. קלט: "עגבניות" -> קטגוריה: ירקות ופירות
 
 הנחיות קריטיות:
 - ענה בשם הקטגוריה בלבד, ללא הסברים וללא סימני פיסוק.
 - אם המוצר לא מופיע בדוגמאות, השתמש בהיגיון כדי לשייך אותו לקטגוריה המתאימה ביותר מהרשימה.
 - אם אתה לא בטוח, שייך לקטגוריה הקרובה ביותר (למשל: סבון כלים לניקיון, קוטג' למוצרי חלב וביצים).
+- יתכן והמשתמש יכניס פריט עם מספר המציין את הכמות הדרושה לקנייה כפי שכתוב בסוגריים, למשל "3 ביצים" -> קטגוריה: מוצרי חלב וביצים.
 """
 
 # Prompt block template for Layer 2: user-specific corrections (§5.2).

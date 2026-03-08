@@ -41,8 +41,10 @@ def categorize(item_name: str) -> str:
     # Layer 1: cache hit
     cached = get_by_key(normalized)
     if cached is not None:
+        logger.info("categorize: key=%r -> cache HIT -> %r", normalized, cached)
         return cached
 
+    logger.info("categorize: key=%r -> cache MISS, calling LLM", normalized)
     # Layer 2: build prompt with user examples and call LLM
     examples = get_5_latest()
     system_prompt = build_system_prompt_with_overrides(examples)
