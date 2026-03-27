@@ -9,4 +9,4 @@ COPY core/ ./core/
 
 EXPOSE 8000
 
-CMD ["uvicorn", "core.api:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["python", "-m", "uvicorn", "core.api:app", "--host", "0.0.0.0", "--port", "8000"]
