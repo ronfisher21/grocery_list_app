@@ -101,32 +101,14 @@ export default function GroceryListScreen() {
     console.log('[handleSend] session:', JSON.stringify(sessionData?.session?.user?.id ?? 'NO SESSION'));
 
     setSending(true);
-    let category = FALLBACK_CATEGORY;
-
-    const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
-    console.log('[handleSend] calling /categorize', { apiUrl, item_name: text });
-
-    try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_name: text }),
-      });
-      console.log('[handleSend] /categorize response status:', res.status);
-      if (res.ok) {
-        const data = await res.json();
-        category = data.category;
-        console.log('[handleSend] category from API:', category);
-      }
-    } catch (e) {
-      console.log('[handleSend] /categorize fetch error:', e);
-      // use fallback category
-    }
-
-    const insertPayload = { item_name: text, category, checked: false };
+    const insertPayload = { item_name: text, category: FALLBACK_CATEGORY, checked: false };
     console.log('[handleSend] inserting into grocery_items:', JSON.stringify(insertPayload));
 
-    const { data: insertData, error: insertError } = await supabase.from('grocery_items').insert(insertPayload);
+    const { data: insertData, error: insertError } = await supabase
+      .from('grocery_items')
+      .insert(insertPayload)
+      .select('id')
+      .single();
     console.log('[handleSend] insert result — data:', JSON.stringify(insertData), 'error:', JSON.stringify(insertError));
 
     if (insertError) {
@@ -137,6 +119,37 @@ export default function GroceryListScreen() {
 
     setInputText('');
     setSending(false);
+
+    // Categorize in the background so the send button is not blocked.
+    const insertedId = insertData?.id;
+    if (!insertedId) return;
+
+    const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
+    console.log('[handleSend] calling /categorize (background)', { apiUrl, item_name: text });
+
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_name: text }),
+      });
+      console.log('[handleSend] /categorize response status:', res.status);
+      if (!res.ok) return;
+
+      const data = await res.json();
+      const category = data.category;
+      console.log('[handleSend] category from API:', category);
+
+      if (!category || category === FALLBACK_CATEGORY) return;
+
+      const { error: updateError } = await supabase
+        .from('grocery_items')
+        .update({ category })
+        .eq('id', insertedId);
+      console.log('[handleSend] background category update error:', JSON.stringify(updateError));
+    } catch (e) {
+      console.log('[handleSend] /categorize fetch error (background):', e);
+    }
   };
 
   const handleToggleCheck = async (item: GroceryItem) => {
