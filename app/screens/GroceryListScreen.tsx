@@ -1,20 +1,29 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import {
   ActivityIndicator,
   Alert,
   FlatList,
   KeyboardAvoidingView,
+  LayoutAnimation,
   Modal,
   Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  UIManager,
   View,
 } from 'react-native';
 import { useGroceryItems, GroceryItem } from '../lib/useGroceryItems';
 import { supabase } from '../lib/supabase';
 import { useCorrectCategory } from '../hooks/useCorrectCategory';
+
+if (
+  Platform.OS === 'android' &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
 
 const CATEGORIES = [
   'ניקיון',
@@ -34,34 +43,57 @@ const CATEGORIES = [
 
 interface GroupedItems {
   category: string;
-  data: GroceryItem[];
+  unchecked: GroceryItem[];
+  checked: GroceryItem[];
 }
 
 function groupByCategory(items: GroceryItem[]): GroupedItems[] {
-  const map = new Map<string, GroceryItem[]>();
+  const map = new Map<
+    string,
+    { unchecked: GroceryItem[]; checked: GroceryItem[] }
+  >();
   for (const item of items) {
-    const list = map.get(item.category) || [];
-    list.push(item);
-    map.set(item.category, list);
+    const entry = map.get(item.category) || { unchecked: [], checked: [] };
+    if (item.checked) {
+      entry.checked.push(item);
+    } else {
+      entry.unchecked.push(item);
+    }
+    map.set(item.category, entry);
   }
-  // Sort by CATEGORIES order; unknown categories go last
   return Array.from(map.entries())
     .sort(([a], [b]) => {
-      const ia = CATEGORIES.indexOf(a as typeof CATEGORIES[number]);
-      const ib = CATEGORIES.indexOf(b as typeof CATEGORIES[number]);
+      const ia = CATEGORIES.indexOf(a as (typeof CATEGORIES)[number]);
+      const ib = CATEGORIES.indexOf(b as (typeof CATEGORIES)[number]);
       return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
     })
-    .map(([category, data]) => ({ category, data }));
+    .map(([category, { unchecked, checked }]) => ({
+      category,
+      unchecked,
+      checked: checked.sort((a, b) =>
+        a.item_name.localeCompare(b.item_name, 'he'),
+      ),
+    }));
 }
 
 function ItemRow({
   item,
   onToggleCheck,
   onEditCategory,
+  isEditing,
+  editText,
+  onStartEdit,
+  onEditTextChange,
+  onEditSubmit,
 }: {
   item: GroceryItem;
   onToggleCheck: (item: GroceryItem) => void;
   onEditCategory: (item: GroceryItem) => void;
+  isEditing: boolean;
+  editText: string;
+  onStartEdit: (item: GroceryItem) => void;
+  onEditTextChange: (text: string) => void;
+  onEditSubmit: () => void;
 }) {
   return (
     <View style={styles.itemRow}>
@@ -72,7 +104,26 @@ function ItemRow({
         <Text style={styles.checkIcon}>○</Text>
       </TouchableOpacity>
 
-      <Text style={styles.itemName}>{item.item_name}</Text>
+      {isEditing ? (
+        <TextInput
+          style={styles.itemNameInput}
+          value={editText}
+          onChangeText={onEditTextChange}
+          onSubmitEditing={onEditSubmit}
+          onBlur={onEditSubmit}
+          autoFocus
+          selectTextOnFocus
+          textAlign="right"
+          returnKeyType="done"
+        />
+      ) : (
+        <TouchableOpacity
+          style={styles.itemNameButton}
+          onPress={() => onStartEdit(item)}
+        >
+          <Text style={styles.itemName}>{item.item_name}</Text>
+        </TouchableOpacity>
+      )}
 
       <TouchableOpacity
         style={styles.categoryBadge}
@@ -84,6 +135,26 @@ function ItemRow({
   );
 }
 
+function CheckedItemRow({
+  item,
+  onUncheck,
+}: {
+  item: GroceryItem;
+  onUncheck: (item: GroceryItem) => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={styles.checkedItemRow}
+      onPress={() => onUncheck(item)}
+    >
+      <View style={styles.checkedCircle}>
+        <Text style={styles.checkedIcon}>✓</Text>
+      </View>
+      <Text style={styles.checkedItemName}>{item.item_name}</Text>
+    </TouchableOpacity>
+  );
+}
+
 const FALLBACK_CATEGORY = 'מוצרים יבשים ושימורים';
 
 export default function GroceryListScreen() {
@@ -92,24 +163,80 @@ export default function GroceryListScreen() {
   const [editingItem, setEditingItem] = useState<GroceryItem | null>(null);
   const [inputText, setInputText] = useState('');
   const [sending, setSending] = useState(false);
+  const [expandedChecked, setExpandedChecked] = useState<Set<string>>(
+    new Set(),
+  );
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editText, setEditText] = useState('');
+  const editingRef = useRef<string | null>(null);
+
+  const toggleExpandedChecked = (category: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setExpandedChecked((prev) => {
+      const next = new Set(prev);
+      if (next.has(category)) {
+        next.delete(category);
+      } else {
+        next.add(category);
+      }
+      return next;
+    });
+  };
+
+  const startEditing = (item: GroceryItem) => {
+    editingRef.current = item.id;
+    setEditingItemId(item.id);
+    setEditText(item.item_name);
+  };
+
+  const saveEdit = async () => {
+    const itemId = editingRef.current;
+    if (!itemId) return;
+    editingRef.current = null;
+    setEditingItemId(null);
+
+    const currentItem = items.find((i) => i.id === itemId);
+    const trimmed = editText.trim();
+    if (!currentItem || !trimmed || trimmed === currentItem.item_name) return;
+
+    await supabase
+      .from('grocery_items')
+      .update({ item_name: trimmed })
+      .eq('id', itemId);
+  };
 
   const handleSend = async () => {
     const text = inputText.trim();
     if (!text || sending) return;
 
     const { data: sessionData } = await supabase.auth.getSession();
-    console.log('[handleSend] session:', JSON.stringify(sessionData?.session?.user?.id ?? 'NO SESSION'));
+    console.log(
+      '[handleSend] session:',
+      JSON.stringify(sessionData?.session?.user?.id ?? 'NO SESSION'),
+    );
 
     setSending(true);
-    const insertPayload = { item_name: text, category: FALLBACK_CATEGORY, checked: false };
-    console.log('[handleSend] inserting into grocery_items:', JSON.stringify(insertPayload));
+    const insertPayload = {
+      item_name: text,
+      category: FALLBACK_CATEGORY,
+      checked: false,
+    };
+    console.log(
+      '[handleSend] inserting into grocery_items:',
+      JSON.stringify(insertPayload),
+    );
 
     const { data: insertData, error: insertError } = await supabase
       .from('grocery_items')
       .insert(insertPayload)
       .select('id')
       .single();
-    console.log('[handleSend] insert result — data:', JSON.stringify(insertData), 'error:', JSON.stringify(insertError));
+    console.log(
+      '[handleSend] insert result — data:',
+      JSON.stringify(insertData),
+      'error:',
+      JSON.stringify(insertError),
+    );
 
     if (insertError) {
       Alert.alert('שגיאה', 'לא הצלחנו להוסיף את המוצר. נסו שוב.');
@@ -120,12 +247,14 @@ export default function GroceryListScreen() {
     setInputText('');
     setSending(false);
 
-    // Categorize in the background so the send button is not blocked.
     const insertedId = insertData?.id;
     if (!insertedId) return;
 
     const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
-    console.log('[handleSend] calling /categorize (background)', { apiUrl, item_name: text });
+    console.log('[handleSend] calling /categorize (background)', {
+      apiUrl,
+      item_name: text,
+    });
 
     try {
       const res = await fetch(apiUrl, {
@@ -146,19 +275,39 @@ export default function GroceryListScreen() {
         .from('grocery_items')
         .update({ category })
         .eq('id', insertedId);
-      console.log('[handleSend] background category update error:', JSON.stringify(updateError));
+      console.log(
+        '[handleSend] background category update error:',
+        JSON.stringify(updateError),
+      );
     } catch (e) {
       console.log('[handleSend] /categorize fetch error (background):', e);
     }
   };
 
   const handleToggleCheck = async (item: GroceryItem) => {
-    await supabase.from('grocery_items').delete().eq('id', item.id);
+    await supabase
+      .from('grocery_items')
+      .update({ checked: true })
+      .eq('id', item.id);
   };
 
-  const handleCategoryChange = async (item: GroceryItem, newCategory: string) => {
+  const handleUncheck = async (item: GroceryItem) => {
+    await supabase
+      .from('grocery_items')
+      .update({ checked: false })
+      .eq('id', item.id);
+  };
+
+  const handleCategoryChange = async (
+    item: GroceryItem,
+    newCategory: string,
+  ) => {
     setEditingItem(null);
-    await correctCategory({ itemId: item.id, itemName: item.item_name, newCategory });
+    await correctCategory({
+      itemId: item.id,
+      itemName: item.item_name,
+      newCategory,
+    });
   };
 
   const grouped = groupByCategory(items);
@@ -198,10 +347,17 @@ export default function GroceryListScreen() {
           returnKeyType="send"
         />
         {sending ? (
-          <ActivityIndicator size="small" color="#4a90d9" style={styles.sendButton} />
+          <ActivityIndicator
+            size="small"
+            color="#4a90d9"
+            style={styles.sendButton}
+          />
         ) : (
           <TouchableOpacity
-            style={[styles.sendButton, !inputText.trim() && styles.sendButtonDisabled]}
+            style={[
+              styles.sendButton,
+              !inputText.trim() && styles.sendButtonDisabled,
+            ]}
             onPress={handleSend}
             disabled={!inputText.trim()}
           >
@@ -222,14 +378,45 @@ export default function GroceryListScreen() {
           renderItem={({ item: group }) => (
             <View style={styles.categorySection}>
               <Text style={styles.categoryHeader}>{group.category}</Text>
-              {group.data.map((item) => (
+
+              {group.unchecked.map((item) => (
                 <ItemRow
                   key={item.id}
                   item={item}
                   onToggleCheck={handleToggleCheck}
                   onEditCategory={setEditingItem}
+                  isEditing={editingItemId === item.id}
+                  editText={editText}
+                  onStartEdit={startEditing}
+                  onEditTextChange={setEditText}
+                  onEditSubmit={saveEdit}
                 />
               ))}
+
+              {group.checked.length > 0 && (
+                <>
+                  <TouchableOpacity
+                    style={styles.checkedSectionHeader}
+                    onPress={() => toggleExpandedChecked(group.category)}
+                  >
+                    <Text style={styles.checkedSectionText}>
+                      נסמנו ({group.checked.length})
+                    </Text>
+                    <Text style={styles.chevron}>
+                      {expandedChecked.has(group.category) ? '▲' : '▼'}
+                    </Text>
+                  </TouchableOpacity>
+
+                  {expandedChecked.has(group.category) &&
+                    group.checked.map((item) => (
+                      <CheckedItemRow
+                        key={item.id}
+                        item={item}
+                        onUncheck={handleUncheck}
+                      />
+                    ))}
+                </>
+              )}
             </View>
           )}
         />
@@ -340,6 +527,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 12,
     marginBottom: 6,
+    gap: 14,
   },
   checkButton: {
     width: 32,
@@ -349,30 +537,89 @@ const styles = StyleSheet.create({
     borderColor: '#4a90d9',
     alignItems: 'center',
     justifyContent: 'center',
-    marginLeft: 12,
   },
   checkIcon: {
     fontSize: 18,
     color: '#4a90d9',
   },
+  itemNameButton: {
+    flex: 1,
+  },
   itemName: {
+    fontFamily: 'Assistant_400Regular',
+    fontSize: 17,
+    color: '#333',
+    writingDirection: 'rtl',
+  },
+  itemNameInput: {
     flex: 1,
     fontFamily: 'Assistant_400Regular',
     fontSize: 17,
     color: '#333',
     writingDirection: 'rtl',
+    textAlign: 'right',
+    borderBottomWidth: 1.5,
+    borderBottomColor: '#4a90d9',
+    paddingVertical: 2,
+    paddingHorizontal: 0,
   },
   categoryBadge: {
     backgroundColor: '#e8f0fe',
     borderRadius: 8,
     paddingHorizontal: 10,
     paddingVertical: 4,
-    marginRight: 8,
   },
   categoryBadgeText: {
     fontFamily: 'Assistant_400Regular',
     fontSize: 13,
     color: '#4a90d9',
+    writingDirection: 'rtl',
+  },
+  checkedSectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+    gap: 6,
+  },
+  checkedSectionText: {
+    fontFamily: 'Assistant_600SemiBold',
+    fontSize: 14,
+    color: '#999',
+    writingDirection: 'rtl',
+  },
+  chevron: {
+    fontSize: 12,
+    color: '#999',
+  },
+  checkedItemRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0f0f0',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 4,
+    gap: 14,
+  },
+  checkedCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#4a90d9',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  checkedIcon: {
+    fontSize: 14,
+    color: '#fff',
+    fontWeight: 'bold',
+  },
+  checkedItemName: {
+    flex: 1,
+    fontFamily: 'Assistant_400Regular',
+    fontSize: 16,
+    color: '#aaa',
+    textDecorationLine: 'line-through',
     writingDirection: 'rtl',
   },
   modalOverlay: {
