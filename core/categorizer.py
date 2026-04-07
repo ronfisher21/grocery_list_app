@@ -4,9 +4,9 @@ Main classification logic: categorize(item_name) implementing Layer 1 → Layer 
 No HTTP here; the FastAPI layer calls this. Uses normalize, overrides, prompts, and OpenAI.
 """
 
-import logging
+import time
 
-from openai import OpenAI
+from loguru import logger
 
 from core.normalize import normalize
 from core.overrides import get_5_latest, get_by_key
@@ -16,8 +16,6 @@ from core.prompts import (
     build_system_prompt_with_overrides,
 )
 from core.settings import get_settings
-
-logger = logging.getLogger(__name__)
 
 
 def categorize(item_name: str) -> str:
@@ -34,26 +32,39 @@ def categorize(item_name: str) -> str:
     Returns:
         Single category name in Hebrew (one of ALLOWED_CATEGORIES or FALLBACK_CATEGORY).
     """
+    logger.info("─── categorize START ───────────────────────────────")
+    logger.info("  raw input    : {!r}", item_name)
+
     normalized = normalize(item_name or "")
+    logger.info("  normalized   : {!r}", normalized)
+
     if not normalized:
+        logger.warning("  result: FALLBACK (empty after normalization)")
         return FALLBACK_CATEGORY
 
     # Layer 1: cache hit
     cached = get_by_key(normalized)
     if cached is not None:
-        logger.info("categorize: key=%r -> cache HIT -> %r", normalized, cached)
+        logger.success("  layer=1 (cache HIT) → {!r}", cached)
         return cached
 
-    logger.info("categorize: key=%r -> cache MISS, calling LLM", normalized)
+    logger.info("  layer=1 cache MISS → escalating to LLM")
+
     # Layer 2: build prompt with user examples and call LLM
     examples = get_5_latest()
+    logger.debug("  few-shot examples ({} items): {}", len(examples), examples)
+
     system_prompt = build_system_prompt_with_overrides(examples)
+
     try:
         settings = get_settings()
         if not settings.has_openai_key:
-            logger.warning("OpenAI API key not set; using fallback category")
+            logger.warning("  OpenAI key not set → FALLBACK")
             return FALLBACK_CATEGORY
-        client = OpenAI(api_key=settings.openai_api_key)
+
+        client = __import__("openai").OpenAI(api_key=settings.openai_api_key)
+
+        t0 = time.perf_counter()
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
@@ -63,11 +74,25 @@ def categorize(item_name: str) -> str:
             max_tokens=50,
             temperature=0,
         )
+        elapsed_ms = (time.perf_counter() - t0) * 1000
+
         raw = (response.choices[0].message.content or "").strip()
+        logger.info("  llm raw output : {!r}  ({:.0f}ms)", raw, elapsed_ms)
+
         category = _sanitize_category(raw)
-        return category if category else FALLBACK_CATEGORY
+        logger.info("  sanitized      : {!r}", category if category else "(no match)")
+
+        if category:
+            logger.success("  layer=2 (LLM) → {!r}", category)
+            return category
+
+        logger.warning(
+            "  LLM returned unrecognized category {!r} → FALLBACK", raw
+        )
+        return FALLBACK_CATEGORY
+
     except Exception as e:
-        logger.exception("OpenAI categorizer failed: %s", e)
+        logger.exception("  OpenAI call failed: {}", e)
         return FALLBACK_CATEGORY
 
 

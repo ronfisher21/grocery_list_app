@@ -7,13 +7,12 @@ the backend falls back to an in-memory store (empty per process), so app-written
 overrides will not be seen by POST /categorize until these are set.
 """
 
-import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from core.settings import get_settings
+from loguru import logger
 
-logger = logging.getLogger(__name__)
+from core.settings import get_settings
 
 # In-memory fallback when Supabase is not configured
 _store: dict[str, tuple[str, datetime]] = {}
