@@ -5,3 +5,5 @@ app/.env
 core/__pycache__/
 tests/__pycache__/
 app/@core
+.claude/
+app/CLAUDE.md

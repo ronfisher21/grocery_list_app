@@ -8,6 +8,7 @@ import time
 
 from loguru import logger
 
+from core.item_dictionary import get_item_metadata, save_item_metadata
 from core.normalize import normalize
 from core.overrides import get_5_latest, get_by_key
 from core.prompts import (
@@ -41,6 +42,14 @@ def categorize(item_name: str) -> str:
     if not normalized:
         logger.warning("  result: FALLBACK (empty after normalization)")
         return FALLBACK_CATEGORY
+
+    # Layer 0: local SQLite dictionary (zero network, zero tokens)
+    dict_hit = get_item_metadata(normalized)
+    if dict_hit is not None:
+        logger.success("  layer=0 (local dict HIT) → {!r}", dict_hit["category"])
+        return dict_hit["category"]
+
+    logger.info("  layer=0 local dict MISS → escalating")
 
     # Layer 1: cache hit
     cached = get_by_key(normalized)
@@ -84,6 +93,7 @@ def categorize(item_name: str) -> str:
 
         if category:
             logger.success("  layer=2 (LLM) → {!r}", category)
+            save_item_metadata(normalized, category)
             return category
 
         logger.warning(

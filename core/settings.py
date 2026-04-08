@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     project_url: str = ""
     service_role_key: str = ""
+    dict_db_path: str = "data/item_dictionary.db"
 
     @property
     def has_openai_key(self) -> bool:
