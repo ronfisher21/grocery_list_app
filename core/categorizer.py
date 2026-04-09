@@ -6,6 +6,7 @@ No HTTP here; the FastAPI layer calls this. Uses normalize, overrides, prompts, 
 
 import time
 
+import openai
 from loguru import logger
 
 from core.item_dictionary import get_item_metadata, save_item_metadata
@@ -71,7 +72,7 @@ def categorize(item_name: str) -> str:
             logger.warning("  OpenAI key not set → FALLBACK")
             return FALLBACK_CATEGORY
 
-        client = __import__("openai").OpenAI(api_key=settings.openai_api_key)
+        client = openai.OpenAI(api_key=settings.openai_api_key)
 
         t0 = time.perf_counter()
         response = client.chat.completions.create(
