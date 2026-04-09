@@ -13,6 +13,8 @@ interface UseGroceryItemsResult {
   items: GroceryItem[];
   loading: boolean;
   error: string | null;
+  optimisticDelete: (id: string) => void;
+  optimisticUpdate: (id: string, changes: Partial<GroceryItem>) => void;
 }
 
 export function useGroceryItems(): UseGroceryItemsResult {
@@ -35,6 +37,19 @@ export function useGroceryItems(): UseGroceryItemsResult {
     }
     setLoading(false);
   }, []);
+
+  const optimisticDelete = useCallback((id: string) => {
+    setItems((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const optimisticUpdate = useCallback(
+    (id: string, changes: Partial<GroceryItem>) => {
+      setItems((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, ...changes } : item))
+      );
+    },
+    []
+  );
 
   useEffect(() => {
     fetchItems();
@@ -77,5 +92,5 @@ export function useGroceryItems(): UseGroceryItemsResult {
     };
   }, [fetchItems]);
 
-  return { items, loading, error };
+  return { items, loading, error, optimisticDelete, optimisticUpdate };
 }

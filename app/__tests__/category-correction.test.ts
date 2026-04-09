@@ -1,62 +1,49 @@
 /**
  * Category Correction Audit
  *
- * Verifies that useCorrectCategory (or equivalent) correctly:
- * 1. Normalizes the item name before writing (using the shared normalize utility).
- * 2. Upserts the manual_overrides table with item_name_normalized, category, last_corrected_at.
- * 3. Updates the corresponding grocery_items row so the list shows the new category.
- *
- * These tests use mocks for Supabase — we verify the correct calls are made,
- * not that Supabase itself works (that's an integration/E2E concern).
+ * Verifies that useCorrectCategory correctly:
+ * 1. POSTs to the backend /categorize/override endpoint (which handles normalize + manual_overrides).
+ * 2. Updates the grocery_items row in Supabase so the list reflects the new category immediately.
+ * 3. Continues gracefully if the backend call fails (Supabase update still runs).
  */
 
-// Mock Supabase client
-const mockUpsert = jest.fn().mockResolvedValue({ error: null });
-const mockUpdate = jest.fn().mockResolvedValue({ error: null });
-const mockEq = jest.fn().mockReturnValue({ eq: jest.fn().mockResolvedValue({ error: null }) });
+// Mock fetch
+const mockFetch = jest.fn().mockResolvedValue({ ok: true });
+global.fetch = mockFetch;
+
+// Mock Supabase client — chain: from().update().eq()
+const mockEq = jest.fn().mockResolvedValue({ error: null });
+const mockUpdate = jest.fn().mockReturnValue({ eq: mockEq });
 
 jest.mock('../lib/supabase', () => ({
   supabase: {
     from: jest.fn((table: string) => {
-      if (table === 'manual_overrides') {
-        return { upsert: mockUpsert };
-      }
       if (table === 'grocery_items') {
-        return { update: mockUpdate.mockReturnValue({ eq: mockEq }) };
+        return { update: mockUpdate };
       }
       return {};
     }),
   },
 }));
 
-jest.mock('../utils/normalize', () => ({
-  normalize: jest.fn((s: string) => s.trim().replace(/\s+/g, ' ')),
-}));
-
-import { normalize } from '../utils/normalize';
 import { useCorrectCategory } from '../hooks/useCorrectCategory';
 
 describe('Category Correction Flow', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockFetch.mockResolvedValue({ ok: true });
+    process.env.EXPO_PUBLIC_API_BASE_URL = 'http://localhost:8000';
   });
 
-  it('calls normalize on the item name before writing to manual_overrides', async () => {
+  it('POSTs item_name and category to /categorize/override', async () => {
     const { correctCategory } = useCorrectCategory();
-    await correctCategory({ itemId: '123', itemName: '  חלב  ', newCategory: 'מוצרי חלב וביצים' });
-    expect(normalize).toHaveBeenCalledWith('  חלב  ');
-  });
-
-  it('upserts manual_overrides with normalized name, category, and timestamp', async () => {
-    const { correctCategory } = useCorrectCategory();
-    await correctCategory({ itemId: '123', itemName: '  חלב  ', newCategory: 'מוצרי חלב וביצים' });
-    expect(mockUpsert).toHaveBeenCalledWith(
+    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרי חלב וביצים' });
+    expect(mockFetch).toHaveBeenCalledWith(
+      'http://localhost:8000/categorize/override',
       expect.objectContaining({
-        item_name_normalized: 'חלב',
-        category: 'מוצרי חלב וביצים',
-        last_corrected_at: expect.any(String),
-      }),
-      expect.objectContaining({ onConflict: 'item_name_normalized' })
+        method: 'POST',
+        body: JSON.stringify({ item_name: 'חלב', category: 'מוצרי חלב וביצים' }),
+      })
     );
   });
 
@@ -69,8 +56,15 @@ describe('Category Correction Flow', () => {
     expect(mockEq).toHaveBeenCalledWith('id', '123');
   });
 
-  it('handles Supabase upsert error gracefully', async () => {
-    mockUpsert.mockResolvedValueOnce({ error: { message: 'conflict' } });
+  it('still updates grocery_items even if backend call throws', async () => {
+    mockFetch.mockRejectedValueOnce(new Error('network error'));
+    const { correctCategory } = useCorrectCategory();
+    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרי חלב וביצים' });
+    expect(mockUpdate).toHaveBeenCalled();
+  });
+
+  it('does not throw when Supabase update returns an error', async () => {
+    mockEq.mockResolvedValueOnce({ error: { message: 'db error' } });
     const { correctCategory } = useCorrectCategory();
     await expect(
       correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרי חלב וביצים' })

@@ -43,19 +43,6 @@ const CATEGORIES = [
 
 const FALLBACK_CATEGORY = 'מוצרים יבשים ושימורים';
 
-// Mirrors core/parser.py — zero LLM, runs entirely on device
-const LEADING_RE = /^\s*(\d+(?:[.,]\d+)?)\s+(.+)$/u;
-const TRAILING_RE = /^(.+?)\s+(\d+(?:[.,]\d+)?)\s*$/u;
-
-function parseInput(raw: string): { cleanName: string } {
-  const text = raw.trim();
-  let m = LEADING_RE.exec(text);
-  if (m) return { cleanName: m[2].trim() };
-  m = TRAILING_RE.exec(text);
-  if (m) return { cleanName: m[1].trim() };
-  return { cleanName: text };
-}
-
 interface SuggestItem {
   name: string;
   category: string;
@@ -168,25 +155,33 @@ function ItemRow({
 function CheckedItemRow({
   item,
   onUncheck,
+  onDelete,
 }: {
   item: GroceryItem;
   onUncheck: (item: GroceryItem) => void;
+  onDelete: (item: GroceryItem) => void;
 }) {
   return (
-    <TouchableOpacity
-      style={styles.checkedItemRow}
-      onPress={() => onUncheck(item)}
-    >
-      <View style={styles.checkedCircle}>
-        <Text style={styles.checkedIcon}>✓</Text>
-      </View>
-      <Text style={styles.checkedItemName}>{item.item_name}</Text>
-    </TouchableOpacity>
+    <View style={styles.checkedItemRow}>
+      <TouchableOpacity onPress={() => onUncheck(item)} style={styles.checkedRowMain}>
+        <View style={styles.checkedCircle}>
+          <Text style={styles.checkedIcon}>✓</Text>
+        </View>
+        <Text style={styles.checkedItemName}>{item.item_name}</Text>
+      </TouchableOpacity>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => onDelete(item)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Text style={styles.deleteIcon}>✕</Text>
+      </TouchableOpacity>
+    </View>
   );
 }
 
 export default function GroceryListScreen() {
-  const { items, loading, error } = useGroceryItems();
+  const { items, loading, error, optimisticDelete, optimisticUpdate } = useGroceryItems();
   const { correctCategory } = useCorrectCategory();
   const [editingItem, setEditingItem] = useState<GroceryItem | null>(null);
   const [inputText, setInputText] = useState('');
@@ -208,14 +203,12 @@ export default function GroceryListScreen() {
     setInputText(text);
     setSuggestedCategory(null);
 
-    const { cleanName } = parseInput(text);
-
     if (suggestTimer.current) clearTimeout(suggestTimer.current);
 
     setSuggestions([]); // clear immediately so stale results never show
 
-    if (cleanName.length >= 1) {
-      const querySnapshot = cleanName; // capture value at schedule time
+    if (text.trim().length >= 1) {
+      const querySnapshot = text.trim(); // capture value at schedule time
       suggestTimer.current = setTimeout(async () => {
         try {
           const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/suggest?q=${encodeURIComponent(querySnapshot)}`;
@@ -293,14 +286,13 @@ export default function GroceryListScreen() {
     setSending(true);
     setSuggestions([]);
 
-    const { cleanName } = parseInput(rawText);
     const exactMatch = suggestions.find(
-      (s) => s.name.toLowerCase() === cleanName.toLowerCase(),
+      (s) => s.name.toLowerCase() === rawText.toLowerCase(),
     );
     const categoryToUse = suggestedCategory ?? exactMatch?.category ?? null;
 
     const insertPayload = {
-      item_name: rawText,          // display exactly what the user typed
+      item_name: rawText,
       category: categoryToUse ?? FALLBACK_CATEGORY,
       checked: false,
     };
@@ -338,13 +330,13 @@ export default function GroceryListScreen() {
     if (!insertedId) return;
 
     const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
-    console.log('[handleSend] calling /categorize (background)', { apiUrl, item_name: cleanName });
+    console.log('[handleSend] calling /categorize (background)', { apiUrl, item_name: rawText });
 
     try {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_name: cleanName }),  // clean name to categorizer
+        body: JSON.stringify({ item_name: rawText }),
       });
       console.log('[handleSend] /categorize response status:', res.status);
       if (!res.ok) return;
@@ -368,29 +360,28 @@ export default function GroceryListScreen() {
     }
   };
 
-  const handleDelete = async (item: GroceryItem) => {
+  const handleDelete = (item: GroceryItem) => {
     Alert.alert('מחיקה', `למחוק את "${item.item_name}"?`, [
       { text: 'ביטול', style: 'cancel' },
       {
         text: 'מחק',
         style: 'destructive',
-        onPress: () => supabase.from('grocery_items').delete().eq('id', item.id),
+        onPress: () => {
+          optimisticDelete(item.id);
+          supabase.from('grocery_items').delete().eq('id', item.id);
+        },
       },
     ]);
   };
 
-  const handleToggleCheck = async (item: GroceryItem) => {
-    await supabase
-      .from('grocery_items')
-      .update({ checked: true })
-      .eq('id', item.id);
+  const handleToggleCheck = (item: GroceryItem) => {
+    optimisticUpdate(item.id, { checked: true });
+    supabase.from('grocery_items').update({ checked: true }).eq('id', item.id);
   };
 
-  const handleUncheck = async (item: GroceryItem) => {
-    await supabase
-      .from('grocery_items')
-      .update({ checked: false })
-      .eq('id', item.id);
+  const handleUncheck = (item: GroceryItem) => {
+    optimisticUpdate(item.id, { checked: false });
+    supabase.from('grocery_items').update({ checked: false }).eq('id', item.id);
   };
 
   const handleCategoryChange = async (
@@ -533,6 +524,7 @@ export default function GroceryListScreen() {
                         key={item.id}
                         item={item}
                         onUncheck={handleUncheck}
+                        onDelete={handleDelete}
                       />
                     ))}
                 </>
@@ -732,6 +724,12 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     padding: 10,
     marginBottom: 4,
+    gap: 14,
+  },
+  checkedRowMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 14,
   },
   checkedCircle: {
