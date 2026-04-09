@@ -204,7 +204,7 @@ export default function GroceryListScreen() {
 
     setSuggestions([]); // clear immediately so stale results never show
 
-    if (cleanName.length >= 2) {
+    if (cleanName.length >= 1) {
       const querySnapshot = cleanName; // capture value at schedule time
       suggestTimer.current = setTimeout(async () => {
         try {
