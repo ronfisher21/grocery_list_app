@@ -192,6 +192,7 @@ export default function GroceryListScreen() {
   const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
   const [suggestedCategory, setSuggestedCategory] = useState<string | null>(null);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [inputBarBottom, setInputBarBottom] = useState(0);
 
   const onInputChange = (text: string) => {
     setInputText(text);
@@ -201,18 +202,22 @@ export default function GroceryListScreen() {
 
     if (suggestTimer.current) clearTimeout(suggestTimer.current);
 
+    setSuggestions([]); // clear immediately so stale results never show
+
     if (cleanName.length >= 2) {
+      const querySnapshot = cleanName; // capture value at schedule time
       suggestTimer.current = setTimeout(async () => {
         try {
-          const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/suggest?q=${encodeURIComponent(cleanName)}`;
+          const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/suggest?q=${encodeURIComponent(querySnapshot)}`;
           const res = await fetch(apiUrl);
-          if (res.ok) setSuggestions(await res.json());
+          if (!res.ok) return;
+          const data: SuggestItem[] = await res.json();
+          // Guard: only show items whose name actually starts with what the user typed
+          setSuggestions(data.filter((s) => s.name.startsWith(querySnapshot)));
         } catch {
           // Suggestions are best-effort; never block the user
         }
       }, 300);
-    } else {
-      setSuggestions([]);
     }
   };
 
@@ -389,12 +394,15 @@ export default function GroceryListScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <Text style={styles.header}>רשימת קניות</Text>
 
       {/* ── Input bar ── */}
-      <View style={styles.inputBar}>
+      <View
+        style={styles.inputBar}
+        onLayout={(e) => setInputBarBottom(e.nativeEvent.layout.y + e.nativeEvent.layout.height)}
+      >
         <TextInput
           style={styles.textInput}
           value={inputText}
@@ -426,9 +434,9 @@ export default function GroceryListScreen() {
         )}
       </View>
 
-      {/* ── Autocomplete suggestions ── */}
+      {/* ── Autocomplete suggestions (overlay — does not push list down) ── */}
       {suggestions.length > 0 && (
-        <View style={styles.suggestionsPanel}>
+        <View style={[styles.suggestionsPanel, { top: inputBarBottom }]} pointerEvents="box-none">
           {suggestions.map((s) => (
             <TouchableOpacity
               key={s.name}
@@ -453,6 +461,7 @@ export default function GroceryListScreen() {
         <FlatList
           data={grouped}
           keyExtractor={(group) => group.category}
+          keyboardShouldPersistTaps="handled"
           renderItem={({ item: group }) => (
             <View style={styles.categorySection}>
               <Text style={styles.categoryHeader}>{group.category}</Text>
@@ -791,9 +800,18 @@ const styles = StyleSheet.create({
   },
   // ── Autocomplete ──────────────────────────────────────────────────────────
   suggestionsPanel: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    zIndex: 100,
     backgroundColor: '#fff',
     borderBottomWidth: 1,
     borderBottomColor: '#e0e0e0',
+    elevation: 4,        // Android shadow
+    shadowColor: '#000', // iOS shadow
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
   },
   suggestionItem: {
     flexDirection: 'row',
