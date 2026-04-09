@@ -54,6 +54,24 @@ Three new feature tasks approved by user. Work through them in order, report aft
 
 ---
 
+## Bug Fixes (found 2026-04-09)
+
+### ✅ Critical — Override ignored after first LLM hit (DONE 2026-04-09)
+- `POST /categorize/override` was only writing to `manual_overrides` (Layer 1), not Layer 0 (SQLite dict)
+- Result: items already cached in Layer 0 always returned the old LLM category, silently ignoring corrections
+- Fix: `api.py` override handler now also calls `save_item_metadata(normalized, body.category)`
+- Fix: `useCorrectCategory.ts` now calls `POST /categorize/override` instead of writing to Supabase directly (adds validation + updates both layers)
+
+### High — `KeyboardAvoidingView` broken on Android
+- `behavior={undefined}` on Android means keyboard covers the list
+- Fix: use `'height'` on Android
+
+### Medium — Autocomplete suggestions not overlaid (inline layout jump)
+- Suggestions panel is in normal flow; pushes list down on appear/disappear
+- Fix: absolute-position with zIndex
+
+---
+
 ## Deferred (post-new-tasks)
 - [ ] Pull Koyeb runtime logs with `mcp__koyeb__query-logs` — look for wrong-category patterns
 - [ ] Run `python -m core.test_categorize` locally with OpenAI key to validate 25 test cases

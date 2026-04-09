@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException
 from loguru import logger
 
 from core.categorizer import categorize
-from core.item_dictionary import search_items
+from core.item_dictionary import save_item_metadata, search_items
 from core.logging_config import setup_logging
 from core.models import CategorizeRequest, CategorizeResponse, OverrideRequest, OverrideResponse, SuggestItem
 from core.normalize import normalize
@@ -76,6 +76,7 @@ def post_categorize_override(body: OverrideRequest) -> OverrideResponse:
         return OverrideResponse(success=False, message="item_name normalized to empty")
     try:
         upsert(normalized, body.category)
+        save_item_metadata(normalized, body.category)  # keep Layer 0 in sync with the correction
         logger.success("Override saved: {!r} → {!r}", normalized, body.category)
         return OverrideResponse(success=True, message="Override saved.")
     except Exception as e:

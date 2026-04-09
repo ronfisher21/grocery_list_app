@@ -1,5 +1,4 @@
 import { supabase } from '../lib/supabase';
-import { normalize } from '../utils/normalize';
 
 interface CorrectCategoryArgs {
   itemId: string;
@@ -9,23 +8,19 @@ interface CorrectCategoryArgs {
 
 export function useCorrectCategory() {
   const correctCategory = async ({ itemId, itemName, newCategory }: CorrectCategoryArgs) => {
-    const itemNameNormalized = normalize(itemName);
-
-    const { error: overrideError } = await supabase
-      .from('manual_overrides')
-      .upsert(
-        {
-          item_name_normalized: itemNameNormalized,
-          category: newCategory,
-          last_corrected_at: new Date().toISOString(),
-        },
-        { onConflict: 'item_name_normalized' }
-      );
-
-    if (overrideError) {
-      console.error('Failed to upsert manual_overrides:', overrideError);
+    // POST /categorize/override — validates category, updates Layer 0 (SQLite dict) + Layer 1 (manual_overrides)
+    try {
+      const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize/override`;
+      await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_name: itemName, category: newCategory }),
+      });
+    } catch (e) {
+      console.error('Failed to post override to backend:', e);
     }
 
+    // Update the displayed item in Supabase regardless of backend result
     const { error: updateError } = await supabase
       .from('grocery_items')
       .update({ category: newCategory })
