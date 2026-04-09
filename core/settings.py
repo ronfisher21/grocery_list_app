@@ -42,8 +42,14 @@ class Settings(BaseSettings):
         )
 
 
+_settings: Settings | None = None
+
+
 def get_settings() -> Settings:
     """
     Return the application settings instance (loads from .env once).
     """
-    return Settings()
+    global _settings
+    if _settings is None:
+        _settings = Settings()
+    return _settings

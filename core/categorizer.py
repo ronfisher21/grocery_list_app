@@ -19,6 +19,15 @@ from core.prompts import (
 )
 from core.settings import get_settings
 
+_openai_client: openai.OpenAI | None = None
+
+
+def _get_openai_client() -> openai.OpenAI:
+    global _openai_client
+    if _openai_client is None:
+        _openai_client = openai.OpenAI(api_key=get_settings().openai_api_key)
+    return _openai_client
+
 
 def categorize(item_name: str) -> str:
     """
@@ -67,12 +76,11 @@ def categorize(item_name: str) -> str:
     system_prompt = build_system_prompt_with_overrides(examples)
 
     try:
-        settings = get_settings()
-        if not settings.has_openai_key:
+        if not get_settings().has_openai_key:
             logger.warning("  OpenAI key not set → FALLBACK")
             return FALLBACK_CATEGORY
 
-        client = openai.OpenAI(api_key=settings.openai_api_key)
+        client = _get_openai_client()
 
         t0 = time.perf_counter()
         response = client.chat.completions.create(

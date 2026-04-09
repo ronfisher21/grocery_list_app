@@ -100,6 +100,7 @@ function ItemRow({
   item,
   onToggleCheck,
   onEditCategory,
+  onDelete,
   isEditing,
   editText,
   onStartEdit,
@@ -109,6 +110,7 @@ function ItemRow({
   item: GroceryItem;
   onToggleCheck: (item: GroceryItem) => void;
   onEditCategory: (item: GroceryItem) => void;
+  onDelete: (item: GroceryItem) => void;
   isEditing: boolean;
   editText: string;
   onStartEdit: (item: GroceryItem) => void;
@@ -117,6 +119,14 @@ function ItemRow({
 }) {
   return (
     <View style={styles.itemRow}>
+      <TouchableOpacity
+        style={styles.deleteButton}
+        onPress={() => onDelete(item)}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        <Text style={styles.deleteIcon}>✕</Text>
+      </TouchableOpacity>
+
       <TouchableOpacity
         style={styles.checkButton}
         onPress={() => onToggleCheck(item)}
@@ -266,6 +276,14 @@ export default function GroceryListScreen() {
     const rawText = inputText.trim();
     if (!rawText || sending) return;
 
+    const isDuplicate = items.some(
+      (i) => i.item_name.trim().toLowerCase() === rawText.toLowerCase(),
+    );
+    if (isDuplicate) {
+      Alert.alert('כבר קיים', `"${rawText}" כבר ברשימה.`);
+      return;
+    }
+
     const { data: sessionData } = await supabase.auth.getSession();
     console.log(
       '[handleSend] session:',
@@ -276,7 +294,10 @@ export default function GroceryListScreen() {
     setSuggestions([]);
 
     const { cleanName } = parseInput(rawText);
-    const categoryToUse = suggestedCategory;
+    const exactMatch = suggestions.find(
+      (s) => s.name.toLowerCase() === cleanName.toLowerCase(),
+    );
+    const categoryToUse = suggestedCategory ?? exactMatch?.category ?? null;
 
     const insertPayload = {
       item_name: rawText,          // display exactly what the user typed
@@ -345,6 +366,17 @@ export default function GroceryListScreen() {
     } catch (e) {
       console.log('[handleSend] /categorize fetch error (background):', e);
     }
+  };
+
+  const handleDelete = async (item: GroceryItem) => {
+    Alert.alert('מחיקה', `למחוק את "${item.item_name}"?`, [
+      { text: 'ביטול', style: 'cancel' },
+      {
+        text: 'מחק',
+        style: 'destructive',
+        onPress: () => supabase.from('grocery_items').delete().eq('id', item.id),
+      },
+    ]);
   };
 
   const handleToggleCheck = async (item: GroceryItem) => {
@@ -472,6 +504,7 @@ export default function GroceryListScreen() {
                   item={item}
                   onToggleCheck={handleToggleCheck}
                   onEditCategory={setEditingItem}
+                  onDelete={handleDelete}
                   isEditing={editingItemId === item.id}
                   editText={editText}
                   onStartEdit={startEditing}
@@ -615,6 +648,19 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 6,
     gap: 14,
+  },
+  deleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: '#fee2e2',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteIcon: {
+    fontSize: 13,
+    color: '#e74c3c',
+    fontWeight: 'bold',
   },
   checkButton: {
     width: 32,

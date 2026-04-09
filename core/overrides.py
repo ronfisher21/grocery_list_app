@@ -7,6 +7,7 @@ the backend falls back to an in-memory store (empty per process), so app-written
 overrides will not be seen by POST /categorize until these are set.
 """
 
+import time
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,15 +21,25 @@ _order: list[str] = []
 
 TABLE_NAME = "manual_overrides"
 
+_supabase_client = None
+
+# Cache for get_5_latest: (result, expiry_timestamp)
+_latest_cache: tuple[list[tuple[str, str]], float] | None = None
+_LATEST_CACHE_TTL = 30.0  # seconds
+
 
 def _client():
-    """Return Supabase client or None if not configured."""
+    """Return Supabase client (cached) or None if not configured."""
+    global _supabase_client
+    if _supabase_client is not None:
+        return _supabase_client
     settings = get_settings()
     if not settings.has_supabase:
         return None
     try:
         from supabase import create_client
-        return create_client(settings.project_url, settings.service_role_key)
+        _supabase_client = create_client(settings.project_url, settings.service_role_key)
+        return _supabase_client
     except Exception as e:
         logger.warning("Supabase client creation failed: %s", e)
         return None
@@ -88,10 +99,16 @@ def get_by_key(normalized_key: str) -> str | None:
 def get_5_latest() -> list[tuple[str, str]]:
     """
     Return the 5 most recently corrected (item_name_normalized, category) pairs for Layer 2.
+    Result is cached for 30 seconds to avoid a Supabase round-trip on every LLM call.
 
     Returns:
         List of (normalized_item_name, category), most recent first (max 5).
     """
+    global _latest_cache
+    now = time.monotonic()
+    if _latest_cache is not None and now < _latest_cache[1]:
+        return _latest_cache[0]
+
     client = _client()
     if client is None:
         out: list[tuple[str, str]] = []
@@ -118,6 +135,7 @@ def get_5_latest() -> list[tuple[str, str]]:
             v = row.get("category")
             if isinstance(k, str) and isinstance(v, str):
                 result.append((k, v))
+        _latest_cache = (result, now + _LATEST_CACHE_TTL)
         return result
     except Exception as e:
         logger.exception("Supabase get_5_latest failed: %s", e)
@@ -125,6 +143,8 @@ def get_5_latest() -> list[tuple[str, str]]:
 
 
 def upsert(normalized_key: str, category: str) -> None:
+    global _latest_cache
+    _latest_cache = None  # invalidate so next call fetches fresh data
     """
     Upsert a manual override: set category for normalized item and refresh last_corrected_at.
 
