@@ -10,10 +10,12 @@ from fastapi import FastAPI, HTTPException
 from loguru import logger
 
 from core.categorizer import categorize
+from core.item_dictionary import search_items
 from core.logging_config import setup_logging
-from core.models import CategorizeRequest, CategorizeResponse, OverrideRequest, OverrideResponse
+from core.models import CategorizeRequest, CategorizeResponse, OverrideRequest, OverrideResponse, SuggestItem
 from core.normalize import normalize
 from core.overrides import upsert
+from core.parser import parse_item
 from core.prompts import ALLOWED_CATEGORIES
 from core.settings import get_settings
 
@@ -46,9 +48,11 @@ def post_categorize(body: CategorizeRequest) -> CategorizeResponse:
     Uses Layer 1 (cache) then Layer 2 (LLM with few-shot); returns category only.
     """
     logger.info("POST /categorize  item_name={!r}", body.item_name)
-    category = categorize(body.item_name)
+    parsed = parse_item(body.item_name)
+    logger.info("  parsed → quantity={} clean_name={!r}", parsed.quantity, parsed.clean_name)
+    category = categorize(parsed.clean_name)
     logger.info("POST /categorize  result={!r}", category)
-    return CategorizeResponse(category=category)
+    return CategorizeResponse(category=category, quantity=parsed.quantity)
 
 
 @app.post("/categorize/override", response_model=OverrideResponse)
@@ -77,6 +81,20 @@ def post_categorize_override(body: OverrideRequest) -> OverrideResponse:
     except Exception as e:
         logger.exception("Override upsert failed: {}", e)
         raise HTTPException(status_code=500, detail="Failed to save override") from e
+
+
+@app.get("/suggest", response_model=list[SuggestItem])
+def get_suggest(q: str = "") -> list[SuggestItem]:
+    """
+    Autocomplete: prefix-search the local item dictionary.
+
+    Args q: Partial item name typed by the user (min 2 chars recommended).
+    Returns up to 6 matching items sorted by closest prefix.
+    """
+    logger.debug("GET /suggest  q={!r}", q)
+    results = search_items(q.strip())
+    logger.debug("GET /suggest  {} results", len(results))
+    return [SuggestItem(**r) for r in results]
 
 
 @app.get("/health")

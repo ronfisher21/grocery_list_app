@@ -41,6 +41,26 @@ const CATEGORIES = [
   'ירקות ופירות',
 ] as const;
 
+const FALLBACK_CATEGORY = 'מוצרים יבשים ושימורים';
+
+// Mirrors core/parser.py — zero LLM, runs entirely on device
+const LEADING_RE = /^\s*(\d+(?:[.,]\d+)?)\s+(.+)$/u;
+const TRAILING_RE = /^(.+?)\s+(\d+(?:[.,]\d+)?)\s*$/u;
+
+function parseInput(raw: string): { cleanName: string } {
+  const text = raw.trim();
+  let m = LEADING_RE.exec(text);
+  if (m) return { cleanName: m[2].trim() };
+  m = TRAILING_RE.exec(text);
+  if (m) return { cleanName: m[1].trim() };
+  return { cleanName: text };
+}
+
+interface SuggestItem {
+  name: string;
+  category: string;
+}
+
 interface GroupedItems {
   category: string;
   unchecked: GroceryItem[];
@@ -155,8 +175,6 @@ function CheckedItemRow({
   );
 }
 
-const FALLBACK_CATEGORY = 'מוצרים יבשים ושימורים';
-
 export default function GroceryListScreen() {
   const { items, loading, error } = useGroceryItems();
   const { correctCategory } = useCorrectCategory();
@@ -169,6 +187,40 @@ export default function GroceryListScreen() {
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editText, setEditText] = useState('');
   const editingRef = useRef<string | null>(null);
+
+  // Autocomplete state
+  const [suggestions, setSuggestions] = useState<SuggestItem[]>([]);
+  const [suggestedCategory, setSuggestedCategory] = useState<string | null>(null);
+  const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const onInputChange = (text: string) => {
+    setInputText(text);
+    setSuggestedCategory(null);
+
+    const { cleanName } = parseInput(text);
+
+    if (suggestTimer.current) clearTimeout(suggestTimer.current);
+
+    if (cleanName.length >= 2) {
+      suggestTimer.current = setTimeout(async () => {
+        try {
+          const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/suggest?q=${encodeURIComponent(cleanName)}`;
+          const res = await fetch(apiUrl);
+          if (res.ok) setSuggestions(await res.json());
+        } catch {
+          // Suggestions are best-effort; never block the user
+        }
+      }, 300);
+    } else {
+      setSuggestions([]);
+    }
+  };
+
+  const onSuggestionTap = (s: SuggestItem) => {
+    setInputText(s.name);
+    setSuggestedCategory(s.category);
+    setSuggestions([]);
+  };
 
   const toggleExpandedChecked = (category: string) => {
     LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -206,8 +258,8 @@ export default function GroceryListScreen() {
   };
 
   const handleSend = async () => {
-    const text = inputText.trim();
-    if (!text || sending) return;
+    const rawText = inputText.trim();
+    if (!rawText || sending) return;
 
     const { data: sessionData } = await supabase.auth.getSession();
     console.log(
@@ -216,15 +268,17 @@ export default function GroceryListScreen() {
     );
 
     setSending(true);
+    setSuggestions([]);
+
+    const { cleanName } = parseInput(rawText);
+    const categoryToUse = suggestedCategory;
+
     const insertPayload = {
-      item_name: text,
-      category: FALLBACK_CATEGORY,
+      item_name: rawText,          // display exactly what the user typed
+      category: categoryToUse ?? FALLBACK_CATEGORY,
       checked: false,
     };
-    console.log(
-      '[handleSend] inserting into grocery_items:',
-      JSON.stringify(insertPayload),
-    );
+    console.log('[handleSend] inserting:', JSON.stringify(insertPayload));
 
     const { data: insertData, error: insertError } = await supabase
       .from('grocery_items')
@@ -245,22 +299,26 @@ export default function GroceryListScreen() {
     }
 
     setInputText('');
+    setSuggestedCategory(null);
     setSending(false);
+
+    // Skip /categorize when autocomplete already gave us a confirmed category
+    if (categoryToUse) {
+      console.log('[handleSend] category from autocomplete, skipping /categorize');
+      return;
+    }
 
     const insertedId = insertData?.id;
     if (!insertedId) return;
 
     const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
-    console.log('[handleSend] calling /categorize (background)', {
-      apiUrl,
-      item_name: text,
-    });
+    console.log('[handleSend] calling /categorize (background)', { apiUrl, item_name: cleanName });
 
     try {
       const res = await fetch(apiUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_name: text }),
+        body: JSON.stringify({ item_name: cleanName }),  // clean name to categorizer
       });
       console.log('[handleSend] /categorize response status:', res.status);
       if (!res.ok) return;
@@ -335,17 +393,19 @@ export default function GroceryListScreen() {
     >
       <Text style={styles.header}>רשימת קניות</Text>
 
+      {/* ── Input bar ── */}
       <View style={styles.inputBar}>
         <TextInput
           style={styles.textInput}
           value={inputText}
-          onChangeText={setInputText}
+          onChangeText={onInputChange}
           placeholder="הוסיפו מוצר..."
           placeholderTextColor="#999"
           editable={!sending}
           onSubmitEditing={handleSend}
           returnKeyType="send"
         />
+
         {sending ? (
           <ActivityIndicator
             size="small"
@@ -365,6 +425,24 @@ export default function GroceryListScreen() {
           </TouchableOpacity>
         )}
       </View>
+
+      {/* ── Autocomplete suggestions ── */}
+      {suggestions.length > 0 && (
+        <View style={styles.suggestionsPanel}>
+          {suggestions.map((s) => (
+            <TouchableOpacity
+              key={s.name}
+              style={styles.suggestionItem}
+              onPress={() => onSuggestionTap(s)}
+            >
+              <Text style={styles.suggestionName}>{s.name}</Text>
+              <View style={styles.suggestionBadge}>
+                <Text style={styles.suggestionBadgeText}>{s.category}</Text>
+              </View>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
 
       {items.length === 0 ? (
         <View style={styles.center}>
@@ -710,5 +788,39 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#fff',
     writingDirection: 'rtl',
+  },
+  // ── Autocomplete ──────────────────────────────────────────────────────────
+  suggestionsPanel: {
+    backgroundColor: '#fff',
+    borderBottomWidth: 1,
+    borderBottomColor: '#e0e0e0',
+  },
+  suggestionItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 11,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f5f5f5',
+    gap: 8,
+  },
+  suggestionName: {
+    flex: 1,
+    fontFamily: 'Assistant_400Regular',
+    fontSize: 16,
+    color: '#333',
+    writingDirection: 'rtl',
+    textAlign: 'right',
+  },
+  suggestionBadge: {
+    backgroundColor: '#e8f0fe',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  suggestionBadgeText: {
+    fontFamily: 'Assistant_400Regular',
+    fontSize: 12,
+    color: '#4a90d9',
   },
 });

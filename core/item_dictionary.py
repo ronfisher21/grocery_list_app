@@ -75,6 +75,32 @@ def get_item_metadata(name: str) -> Optional[dict]:
         return None
 
 
+def search_items(prefix: str, limit: int = 6) -> list[dict]:
+    """
+    Prefix search in the local dictionary (for autocomplete).
+
+    Args:
+        prefix: Raw prefix string (will be normalized).
+        limit: Maximum results to return.
+
+    Returns:
+        List of dicts with keys {name, category, icon, last_quantity}.
+    """
+    key = normalize(prefix)
+    if not key:
+        return []
+    try:
+        conn = _get_conn()
+        rows = conn.execute(
+            "SELECT name, category, icon, last_quantity FROM item_dictionary WHERE name LIKE ? LIMIT ?",
+            (f"{key}%", limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        logger.exception("item_dictionary search failed: {}", e)
+        return []
+
+
 def save_item_metadata(
     name: str,
     category: str,

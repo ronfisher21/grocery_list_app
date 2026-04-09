@@ -1,0 +1,44 @@
+# --- תלויות וספריות חיצוניות ---
+node_modules/
+.gradle/
+capacitor/
+vendor/
+
+# --- תוצרי בנייה (Build Artifacts) ---
+# אלו קבצים ענקיים שמשתנים כל הזמן ואין טעם שקלוד יקרא
+dist/
+build/
+bin/
+obj/
+*.apk
+*.bundle
+*.app
+
+# --- לוגים וקבצים זמניים ---
+*.log
+npm-debug.log*
+yarn-debug.log*
+.cache/
+.eslintcache
+
+# --- קבצי Database (חשוב!) ---
+# קלוד צריך לראות את ה-Schema (הקוד), לא את הקובץ הבינארי של הנתונים
+*.db
+*.sqlite
+*.sqlite3
+
+# --- קבצים אישיים וסודיים ---
+.env
+.env.*
+secrets.*
+*.pem
+*.key
+
+# --- נכסים גרפיים כבדים ---
+# אין טעם שקלוד "יקרא" קוד של תמונות או מפות
+assets/images/
+assets/maps/
+*.mbtiles
+*.png
+*.jpg
+*.svg

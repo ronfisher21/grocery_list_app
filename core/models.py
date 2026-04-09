@@ -15,6 +15,15 @@ class CategorizeResponse(BaseModel):
     """Response body for POST /categorize."""
 
     category: str = Field(..., description="Hebrew category name for the item.")
+    quantity: float | None = Field(None, description="Parsed quantity from item name (e.g. 4 from '4 בננות'), or null if none.")
+
+
+class SuggestItem(BaseModel):
+    """One autocomplete suggestion from the local item dictionary."""
+
+    name: str = Field(..., description="Normalized item name.")
+    category: str = Field(..., description="Hebrew category.")
+    last_quantity: float | None = Field(None, description="Last recorded quantity (informational only).")
 
 
 class OverrideRequest(BaseModel):

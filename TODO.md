@@ -46,12 +46,11 @@ Three new feature tasks approved by user. Work through them in order, report aft
 4. Write `core/test_parser.py` — 10 edge cases: mixed languages, no numbers, trailing numbers, zero LLM calls asserted
 5. **Report back and wait for approval before starting Task 4**
 
-### Task 4 — Frontend: Smart Entry UI
-1. Create Autocomplete input field — as user types, query local SQLite `item_dictionary`
-2. If match found, show as suggestion
-3. On selection, auto-place item in its assigned category block
-4. Add small Quantity toggle next to item name, defaulting to Regex-captured number
-5. **Report back and wait for approval when done**
+### ✅ Task 4 — Frontend: Smart Entry UI (DONE 2026-04-08)
+1. `GET /suggest?q=` endpoint — prefix search on local SQLite `item_dictionary`
+2. Autocomplete dropdown appears as user types (debounced 300ms, min 2 chars)
+3. On suggestion tap → category pre-set, item lands in correct category block immediately (no background `/categorize` call)
+4. Quantity handling: parser strips leading/trailing number from input; clean name sent to `/categorize`; original text (e.g. `"4 בננות"`) stored in Supabase and displayed as-is in the list
 
 ---
 
