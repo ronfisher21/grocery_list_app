@@ -20,6 +20,34 @@ from core.prompts import ALLOWED_CATEGORIES
 from core.settings import get_settings
 
 
+def _seed_dict_from_supabase() -> None:
+    """Read all manual_overrides from Supabase and populate the local SQLite dict."""
+    s = get_settings()
+    if not s.has_supabase:
+        logger.warning("seed_dict: Supabase not configured — skipping")
+        return
+    try:
+        from supabase import create_client
+
+        client = create_client(s.project_url, s.service_role_key)
+        resp = (
+            client.table("manual_overrides")
+            .select("item_name_normalized, category")
+            .execute()
+        )
+        rows = resp.data if isinstance(resp.data, list) else []
+        count = 0
+        for row in rows:
+            name = row.get("item_name_normalized")
+            cat = row.get("category")
+            if isinstance(name, str) and isinstance(cat, str) and name and cat:
+                save_item_metadata(name, cat)
+                count += 1
+        logger.info("seed_dict: loaded {} overrides into local SQLite dict", count)
+    except Exception as e:
+        logger.exception("seed_dict: failed to seed from Supabase: {}", e)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     setup_logging(level="DEBUG")
@@ -29,6 +57,7 @@ async def lifespan(app: FastAPI):
         "Supabase" if s.has_supabase else "in-memory (overrides will NOT persist)",
     )
     logger.info("OpenAI key present: {}", s.has_openai_key)
+    _seed_dict_from_supabase()
     yield
 
 

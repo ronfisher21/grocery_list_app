@@ -25,6 +25,10 @@ Act as a software development team. Communication style: concise and technical.
 - **Frontend agent:** Use the `frontend-design` plugin for all UI work.
 - **All agents (writing code):** Always use the `code-simplifier` and `context7` plugins.
 
+## Subagent Policy
+- **Remote server / mobile:** Do NOT spawn subagents. Apply all changes directly in the main session.
+- **Local Claude Code on desktop:** Only spawn subagents when the user explicitly asks for it.
+
 ## Key Protocols
 - **Categorization priority:** `manual_overrides` (Supabase) → local dictionary → LLM.
 - **POST /categorize:** Log full request/response cycle; must be traceable.

@@ -13,6 +13,7 @@ interface UseGroceryItemsResult {
   items: GroceryItem[];
   loading: boolean;
   error: string | null;
+  optimisticInsert: (item: GroceryItem) => void;
   optimisticDelete: (id: string) => void;
   optimisticUpdate: (id: string, changes: Partial<GroceryItem>) => void;
 }
@@ -38,6 +39,10 @@ export function useGroceryItems(): UseGroceryItemsResult {
     setLoading(false);
   }, []);
 
+  const optimisticInsert = useCallback((item: GroceryItem) => {
+    setItems((prev) => [...prev, item]);
+  }, []);
+
   const optimisticDelete = useCallback((id: string) => {
     setItems((prev) => prev.filter((item) => item.id !== id));
   }, []);
@@ -60,7 +65,10 @@ export function useGroceryItems(): UseGroceryItemsResult {
         "postgres_changes",
         { event: "INSERT", schema: "public", table: "grocery_items" },
         (payload) => {
-          setItems((prev) => [...prev, payload.new as GroceryItem]);
+          const incoming = payload.new as GroceryItem;
+          setItems((prev) =>
+            prev.some((i) => i.id === incoming.id) ? prev : [...prev, incoming]
+          );
         }
       )
       .on(
@@ -92,5 +100,5 @@ export function useGroceryItems(): UseGroceryItemsResult {
     };
   }, [fetchItems]);
 
-  return { items, loading, error, optimisticDelete, optimisticUpdate };
+  return { items, loading, error, optimisticInsert, optimisticDelete, optimisticUpdate };
 }

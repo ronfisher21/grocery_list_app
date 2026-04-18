@@ -181,7 +181,7 @@ function CheckedItemRow({
 }
 
 export default function GroceryListScreen() {
-  const { items, loading, error, optimisticDelete, optimisticUpdate } = useGroceryItems();
+  const { items, loading, error, optimisticInsert, optimisticDelete, optimisticUpdate } = useGroceryItems();
   const { correctCategory } = useCorrectCategory();
   const [editingItem, setEditingItem] = useState<GroceryItem | null>(null);
   const [inputText, setInputText] = useState('');
@@ -215,8 +215,7 @@ export default function GroceryListScreen() {
           const res = await fetch(apiUrl);
           if (!res.ok) return;
           const data: SuggestItem[] = await res.json();
-          // Guard: only show items whose name actually starts with what the user typed
-          setSuggestions(data.filter((s) => s.name.startsWith(querySnapshot)));
+          setSuggestions(data);
         } catch {
           // Suggestions are best-effort; never block the user
         }
@@ -316,6 +315,15 @@ export default function GroceryListScreen() {
       return;
     }
 
+    // Show the item immediately without waiting for Realtime
+    optimisticInsert({
+      id: insertData.id,
+      item_name: rawText,
+      category: categoryToUse ?? FALLBACK_CATEGORY,
+      checked: false,
+      created_at: new Date().toISOString(),
+    });
+
     setInputText('');
     setSuggestedCategory(null);
     setSending(false);
@@ -346,6 +354,8 @@ export default function GroceryListScreen() {
       console.log('[handleSend] category from API:', category);
 
       if (!category || category === FALLBACK_CATEGORY) return;
+
+      optimisticUpdate(insertedId, { category });
 
       const { error: updateError } = await supabase
         .from('grocery_items')
