@@ -338,7 +338,7 @@ export default function GroceryListScreen() {
     if (!insertedId) return;
 
     const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
-    console.log('[handleSend] calling /categorize (background)', { apiUrl, item_name: rawText });
+    console.log('[handleSend] calling /categorize for:', rawText);
 
     try {
       const res = await fetch(apiUrl, {
@@ -347,26 +347,41 @@ export default function GroceryListScreen() {
         body: JSON.stringify({ item_name: rawText }),
       });
       console.log('[handleSend] /categorize response status:', res.status);
-      if (!res.ok) return;
+
+      if (!res.ok) {
+        console.error('[handleSend] /categorize failed with status:', res.status);
+        return;
+      }
 
       const data = await res.json();
-      const category = data.category;
-      console.log('[handleSend] category from API:', category);
+      const category = data?.category;
+      console.log('[handleSend] /categorize returned category:', category);
 
-      if (!category || category === FALLBACK_CATEGORY) return;
+      if (!category) {
+        console.warn('[handleSend] /categorize returned empty category');
+        return;
+      }
 
+      if (category === FALLBACK_CATEGORY) {
+        console.log('[handleSend] /categorize returned FALLBACK_CATEGORY, skipping update');
+        return;
+      }
+
+      console.log('[handleSend] updating item', insertedId, 'with category:', category);
       optimisticUpdate(insertedId, { category });
 
       const { error: updateError } = await supabase
         .from('grocery_items')
         .update({ category })
         .eq('id', insertedId);
-      console.log(
-        '[handleSend] background category update error:',
-        JSON.stringify(updateError),
-      );
+
+      if (updateError) {
+        console.error('[handleSend] database update failed:', updateError);
+      } else {
+        console.log('[handleSend] database update successful');
+      }
     } catch (e) {
-      console.log('[handleSend] /categorize fetch error (background):', e);
+      console.error('[handleSend] /categorize error:', e);
     }
   };
 
@@ -376,9 +391,12 @@ export default function GroceryListScreen() {
       {
         text: 'מחק',
         style: 'destructive',
-        onPress: () => {
+        onPress: async () => {
           optimisticDelete(item.id);
-          supabase.from('grocery_items').delete().eq('id', item.id);
+          const { error } = await supabase.from('grocery_items').delete().eq('id', item.id);
+          if (error) {
+            console.error('[handleDelete] Error deleting item:', error);
+          }
         },
       },
     ]);

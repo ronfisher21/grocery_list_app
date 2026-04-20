@@ -31,8 +31,9 @@ def _get_openai_client() -> openai.OpenAI:
 
 def categorize(item_name: str) -> str:
     """
-    Classify a grocery item into one Hebrew category (Layer 1 → 2 → LLM → fallback).
+    Classify a grocery item into one Hebrew category (Layer 0 → 1 → 2 → LLM → fallback).
 
+    Layer 0: Local SQLite dictionary (zero network, zero tokens).
     Layer 1: Exact-match cache from manual_overrides.
     Layer 2: Few-shot from 5 latest overrides + GPT-4o mini.
     Fallback: FALLBACK_CATEGORY when OpenAI is unavailable or returns invalid category.
@@ -61,13 +62,14 @@ def categorize(item_name: str) -> str:
 
     logger.info("  layer=0 local dict MISS → escalating")
 
-    # Layer 1: cache hit
+    # Layer 1: manual overrides cache hit
     cached = get_by_key(normalized)
     if cached is not None:
-        logger.success("  layer=1 (cache HIT) → {!r}", cached)
+        logger.success("  layer=1 (override cache HIT) → {!r}", cached)
+        save_item_metadata(normalized, cached)  # populate layer 0 for next time
         return cached
 
-    logger.info("  layer=1 cache MISS → escalating to LLM")
+    logger.info("  layer=1 override cache MISS → escalating to LLM")
 
     # Layer 2: build prompt with user examples and call LLM
     examples = get_5_latest()
@@ -112,6 +114,7 @@ def categorize(item_name: str) -> str:
 
     except Exception as e:
         logger.exception("  OpenAI call failed: {}", e)
+        logger.warning("  → FALLBACK due to exception")
         return FALLBACK_CATEGORY
 
 

@@ -57,46 +57,66 @@ export function useGroceryItems(): UseGroceryItemsResult {
   );
 
   useEffect(() => {
-    fetchItems();
+    let isMounted = true;
+    let isInitialized = false;
 
-    const channel = supabase
-      .channel("grocery_items_changes")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "grocery_items" },
-        (payload) => {
-          const incoming = payload.new as GroceryItem;
-          setItems((prev) =>
-            prev.some((i) => i.id === incoming.id) ? prev : [...prev, incoming]
-          );
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "UPDATE", schema: "public", table: "grocery_items" },
-        (payload) => {
-          setItems((prev) =>
-            prev.map((item) =>
-              item.id === (payload.new as GroceryItem).id
-                ? (payload.new as GroceryItem)
-                : item
-            )
-          );
-        }
-      )
-      .on(
-        "postgres_changes",
-        { event: "DELETE", schema: "public", table: "grocery_items" },
-        (payload) => {
-          setItems((prev) =>
-            prev.filter((item) => item.id !== (payload.old as GroceryItem).id)
-          );
-        }
-      )
-      .subscribe();
+    const initializeAndSubscribe = async () => {
+      // Initial fetch first
+      await fetchItems();
+      if (!isMounted) return;
+      isInitialized = true;
+
+      // Then set up subscription
+      const channel = supabase
+        .channel("grocery_items_changes")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "grocery_items" },
+          (payload) => {
+            if (!isInitialized) return;
+            const incoming = payload.new as GroceryItem;
+            setItems((prev) => {
+              // Prevent duplicates: only add if not already present
+              const exists = prev.some((i) => i.id === incoming.id);
+              return exists ? prev : [...prev, incoming];
+            });
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "UPDATE", schema: "public", table: "grocery_items" },
+          (payload) => {
+            if (!isInitialized) return;
+            const updated = payload.new as GroceryItem;
+            setItems((prev) =>
+              prev.map((item) =>
+                item.id === updated.id ? updated : item
+              )
+            );
+          }
+        )
+        .on(
+          "postgres_changes",
+          { event: "DELETE", schema: "public", table: "grocery_items" },
+          (payload) => {
+            if (!isInitialized) return;
+            const deleted = payload.old as GroceryItem;
+            setItems((prev) =>
+              prev.filter((item) => item.id !== deleted.id)
+            );
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    };
+
+    initializeAndSubscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      isMounted = false;
     };
   }, [fetchItems]);
 
