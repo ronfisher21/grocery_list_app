@@ -392,10 +392,22 @@ export default function GroceryListScreen() {
         text: 'מחק',
         style: 'destructive',
         onPress: async () => {
+          console.log('[handleDelete] Deleting item:', item.id, item.item_name);
           optimisticDelete(item.id);
-          const { error } = await supabase.from('grocery_items').delete().eq('id', item.id);
+
+          const { data, error } = await supabase
+            .from('grocery_items')
+            .delete()
+            .eq('id', item.id)
+            .select();
+
+          console.log('[handleDelete] Delete response - data:', data, 'error:', error);
+
           if (error) {
             console.error('[handleDelete] Error deleting item:', error);
+            Alert.alert('שגיאה', 'לא הצלחנו למחוק את המוצר. נסו שוב.');
+          } else {
+            console.log('[handleDelete] Item deleted successfully from database');
           }
         },
       },
