@@ -38,3 +38,12 @@ Act as a software development team. Communication style: concise and technical.
 - **Backend:** `cd core && uvicorn main:app --reload`
 - **Frontend:** `cd app && npx expo start`
 - **Install Python deps:** `cd core && pip install -r requirements.txt`
+
+## APK Build & Release
+After frontend changes, rebuild the APK and upload to Google Drive (requires manual approval from user before uploading):
+1. Build: `cd app/android && ./gradlew assembleRelease`
+   - Output: `app/android/app/build/outputs/apk/release/app-release.apk`
+2. Upload via Google Drive MCP:
+   - Account: ronfisher10@gmail.com
+   - Destination folder: `app/grocery-list`
+   - Overwrite the existing APK file

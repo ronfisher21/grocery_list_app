@@ -33,7 +33,7 @@ def get_credentials():
         else:
             flow = InstalledAppFlow.from_client_secrets_file(
                 CREDENTIALS_FILE, SCOPES)
-            creds = flow.run_local_server(port=0)
+            creds = flow.run_local_server(port=8080, open_browser=True)
 
         TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
         with open(TOKEN_FILE, 'w') as token:

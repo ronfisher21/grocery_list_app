@@ -93,6 +93,9 @@ function ItemRow({
   onStartEdit,
   onEditTextChange,
   onEditSubmit,
+  isCategorizing,
+  categorizationError,
+  onRetryCategories,
 }: {
   item: GroceryItem;
   onToggleCheck: (item: GroceryItem) => void;
@@ -103,6 +106,9 @@ function ItemRow({
   onStartEdit: (item: GroceryItem) => void;
   onEditTextChange: (text: string) => void;
   onEditSubmit: () => void;
+  isCategorizing?: boolean;
+  categorizationError?: string;
+  onRetryCategories?: () => void;
 }) {
   return (
     <View style={styles.itemRow}>
@@ -142,12 +148,25 @@ function ItemRow({
         </TouchableOpacity>
       )}
 
-      <TouchableOpacity
-        style={styles.categoryBadge}
-        onPress={() => onEditCategory(item)}
-      >
-        <Text style={styles.categoryBadgeText}>{item.category}</Text>
-      </TouchableOpacity>
+      {categorizationError ? (
+        <TouchableOpacity
+          style={[styles.categoryBadge, { backgroundColor: '#ff6b6b' }]}
+          onPress={onRetryCategories}
+        >
+          <Text style={styles.categoryBadgeText}>⚠️</Text>
+        </TouchableOpacity>
+      ) : isCategorizing ? (
+        <View style={[styles.categoryBadge, { backgroundColor: '#ffe066' }]}>
+          <Text style={styles.categoryBadgeText}>⏳</Text>
+        </View>
+      ) : (
+        <TouchableOpacity
+          style={styles.categoryBadge}
+          onPress={() => onEditCategory(item)}
+        >
+          <Text style={styles.categoryBadgeText}>{item.category}</Text>
+        </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -198,6 +217,14 @@ export default function GroceryListScreen() {
   const [suggestedCategory, setSuggestedCategory] = useState<string | null>(null);
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputBarBottom, setInputBarBottom] = useState(0);
+
+  // Categorization failure tracking: itemId -> error message
+  const [failedCategorizations, setFailedCategorizations] = useState<Map<string, string>>(
+    new Map(),
+  );
+  const [pendingCategorizations, setPendingCategorizations] = useState<Set<string>>(
+    new Set(),
+  );
 
   const onInputChange = (text: string) => {
     setInputText(text);
@@ -258,10 +285,166 @@ export default function GroceryListScreen() {
     const trimmed = editText.trim();
     if (!currentItem || !trimmed || trimmed === currentItem.item_name) return;
 
-    await supabase
+    console.log('[saveEdit] Updating item name from:', currentItem.item_name, 'to:', trimmed);
+
+    // Update the item name in database
+    const { error: updateError } = await supabase
       .from('grocery_items')
       .update({ item_name: trimmed })
       .eq('id', itemId);
+
+    if (updateError) {
+      console.error('[saveEdit] Database update failed:', updateError);
+      return;
+    }
+
+    console.log('[saveEdit] Name updated successfully, now re-categorizing...');
+
+    // Re-categorize with the new name
+    await callCategorizeEndpoint(itemId, trimmed);
+  };
+
+  const retryCategorizationForItem = async (itemId: string, itemName: string) => {
+    console.log('[retryCategorizationForItem] Retrying categorization for:', itemName);
+    setPendingCategorizations((prev) => new Set([...prev, itemId]));
+    setFailedCategorizations((prev) => {
+      const next = new Map(prev);
+      next.delete(itemId);
+      return next;
+    });
+
+    await callCategorizeEndpoint(itemId, itemName);
+  };
+
+  const callCategorizeEndpoint = async (itemId: string, itemName: string) => {
+    // Validate inputs
+    if (!itemId || typeof itemId !== 'string') {
+      console.error('[callCategorizeEndpoint] Invalid itemId:', itemId);
+      return;
+    }
+
+    if (!itemName || typeof itemName !== 'string' || itemName.trim() === '') {
+      const errorMsg = 'Invalid item name';
+      console.error('[callCategorizeEndpoint] Invalid itemName:', itemName);
+      setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
+      return;
+    }
+
+    const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
+    if (!apiUrl) {
+      const errorMsg = 'API endpoint not configured';
+      console.error('[callCategorizeEndpoint] Missing API_BASE_URL');
+      setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
+      return;
+    }
+
+    console.log('[callCategorizeEndpoint] Calling /categorize for:', itemName);
+
+    try {
+      const res = await fetch(apiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ item_name: itemName }),
+      });
+
+      console.log('[callCategorizeEndpoint] Response status:', res.status);
+
+      if (!res.ok) {
+        const errorMsg = `HTTP ${res.status}`;
+        console.error('[callCategorizeEndpoint] HTTP error:', errorMsg);
+        setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]);
+        setPendingCategorizations((prev) => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
+        return;
+      }
+
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseError) {
+        const errorMsg = 'Invalid JSON response';
+        console.error('[callCategorizeEndpoint] JSON parse error:', parseError);
+        setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
+        setPendingCategorizations((prev) => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
+        return;
+      }
+
+      // Validate response structure
+      if (typeof data !== 'object' || data === null) {
+        const errorMsg = 'Response is not an object';
+        console.error('[callCategorizeEndpoint] Invalid response structure:', data);
+        setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
+        setPendingCategorizations((prev) => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
+        return;
+      }
+
+      const category = data.category;
+      console.log('[callCategorizeEndpoint] Returned category:', category);
+
+      // Validate category type and value
+      if (typeof category !== 'string' || category.trim() === '') {
+        const errorMsg = `Invalid category type or empty: ${typeof category}`;
+        console.warn('[callCategorizeEndpoint] Invalid category:', {
+          type: typeof category,
+          value: category,
+          isEmpty: typeof category === 'string' && category.trim() === '',
+        });
+        setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
+        setPendingCategorizations((prev) => {
+          const next = new Set(prev);
+          next.delete(itemId);
+          return next;
+        });
+        return;
+      }
+
+      console.log('[callCategorizeEndpoint] Updating item', itemId, 'with category:', category);
+      optimisticUpdate(itemId, { category });
+
+      const { error: updateError } = await supabase
+        .from('grocery_items')
+        .update({ category })
+        .eq('id', itemId);
+
+      if (updateError) {
+        const errorMsg = `DB update failed: ${updateError.message}`;
+        console.error('[callCategorizeEndpoint] Database update failed:', updateError);
+        setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
+      } else {
+        console.log('[callCategorizeEndpoint] Database update successful');
+        setFailedCategorizations((prev) => {
+          const next = new Map(prev);
+          next.delete(itemId);
+          return next;
+        });
+      }
+
+      setPendingCategorizations((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    } catch (e) {
+      const errorMsg = e instanceof Error ? e.message : 'Unknown network error';
+      console.error('[callCategorizeEndpoint] Network/exception error:', e);
+      setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
+      setPendingCategorizations((prev) => {
+        const next = new Set(prev);
+        next.delete(itemId);
+        return next;
+      });
+    }
   };
 
   const handleSend = async () => {
@@ -337,52 +520,8 @@ export default function GroceryListScreen() {
     const insertedId = insertData?.id;
     if (!insertedId) return;
 
-    const apiUrl = `${process.env.EXPO_PUBLIC_API_BASE_URL}/categorize`;
     console.log('[handleSend] calling /categorize for:', rawText);
-
-    try {
-      const res = await fetch(apiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ item_name: rawText }),
-      });
-      console.log('[handleSend] /categorize response status:', res.status);
-
-      if (!res.ok) {
-        console.error('[handleSend] /categorize failed with status:', res.status);
-        return;
-      }
-
-      const data = await res.json();
-      const category = data?.category;
-      console.log('[handleSend] /categorize returned category:', category);
-
-      if (!category) {
-        console.warn('[handleSend] /categorize returned empty category');
-        return;
-      }
-
-      if (category === FALLBACK_CATEGORY) {
-        console.log('[handleSend] /categorize returned FALLBACK_CATEGORY, skipping update');
-        return;
-      }
-
-      console.log('[handleSend] updating item', insertedId, 'with category:', category);
-      optimisticUpdate(insertedId, { category });
-
-      const { error: updateError } = await supabase
-        .from('grocery_items')
-        .update({ category })
-        .eq('id', insertedId);
-
-      if (updateError) {
-        console.error('[handleSend] database update failed:', updateError);
-      } else {
-        console.log('[handleSend] database update successful');
-      }
-    } catch (e) {
-      console.error('[handleSend] /categorize error:', e);
-    }
+    await callCategorizeEndpoint(insertedId, rawText);
   };
 
   const handleDelete = (item: GroceryItem) => {
@@ -544,6 +683,9 @@ export default function GroceryListScreen() {
                   onStartEdit={startEditing}
                   onEditTextChange={setEditText}
                   onEditSubmit={saveEdit}
+                  isCategorizing={pendingCategorizations.has(item.id)}
+                  categorizationError={failedCategorizations.get(item.id)}
+                  onRetryCategories={() => retryCategorizationForItem(item.id, item.item_name)}
                 />
               ))}
 
