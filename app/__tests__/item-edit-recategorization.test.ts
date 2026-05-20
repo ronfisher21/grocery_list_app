@@ -17,9 +17,9 @@ describe('Item Edit with Re-categorization (Issue #2)', () => {
     {
       id: 'item-1',
       item_name: 'חלב 2',
-      category: 'מוצרי חלב וביצים',
+      category: 'מוצרים לאחסן במקרר',
       expectedAfterEdit: 'מילקי',
-      expectedNewCategory: 'מוצרי חלב וביצים', // Same category
+      expectedNewCategory: 'מוצרים לאחסן במקרר', // Same category
     },
     {
       id: 'item-2',
@@ -152,7 +152,7 @@ describe('Item Edit with Re-categorization (Issue #2)', () => {
       id: 'item-1',
       item_name: 'חלב 2',
       checked: false,
-      category: 'מוצרי חלב וביצים',
+      category: 'מוצרים לאחסן במקרר',
     };
 
     // When editing, only name and category should change
@@ -161,7 +161,7 @@ describe('Item Edit with Re-categorization (Issue #2)', () => {
     const updatedItem = {
       ...item,
       item_name: 'מילקי',
-      category: 'מוצרי חלב וביצים',
+      category: 'מוצרים לאחסן במקרר',
       // checked should still be false
     };
 

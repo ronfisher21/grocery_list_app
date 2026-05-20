@@ -12,6 +12,7 @@ from typing import Optional
 from loguru import logger
 
 from core.normalize import normalize
+from core.prompts import migrate_category
 from core.settings import get_settings
 
 _conn: Optional[sqlite3.Connection] = None
@@ -66,6 +67,7 @@ def get_item_metadata(name: str) -> Optional[dict]:
         ).fetchone()
         if row:
             result = dict(row)
+            result["category"] = migrate_category(result["category"])
             logger.debug("item_dictionary: HIT  key={!r} → {}", key, result)
             return result
         logger.debug("item_dictionary: MISS key={!r}", key)
@@ -95,7 +97,10 @@ def search_items(prefix: str, limit: int = 6) -> list[dict]:
             "SELECT name, category, icon, last_quantity FROM item_dictionary WHERE name LIKE ? LIMIT ?",
             (f"{key}%", limit),
         ).fetchall()
-        return [dict(r) for r in rows]
+        results = [dict(r) for r in rows]
+        for r in results:
+            r["category"] = migrate_category(r["category"])
+        return results
     except Exception as e:
         logger.exception("item_dictionary search failed: {}", e)
         return []

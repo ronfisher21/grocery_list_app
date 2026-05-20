@@ -16,8 +16,38 @@ from core.models import CategorizeRequest, CategorizeResponse, OverrideRequest, 
 from core.normalize import normalize
 from core.overrides import upsert
 from core.parser import parse_item
-from core.prompts import ALLOWED_CATEGORIES
+from core.prompts import ALLOWED_CATEGORIES, CATEGORY_MIGRATIONS
 from core.settings import get_settings
+
+
+def _migrate_old_categories_in_supabase(client) -> None:
+    """Rename old category values in manual_overrides and grocery_items."""
+    for old_cat, new_cat in CATEGORY_MIGRATIONS.items():
+        try:
+            r = (
+                client.table("manual_overrides")
+                .update({"category": new_cat})
+                .eq("category", old_cat)
+                .execute()
+            )
+            count = len(r.data) if isinstance(r.data, list) else 0
+            if count:
+                logger.info("migrate: manual_overrides renamed {} rows: {!r} → {!r}", count, old_cat, new_cat)
+        except Exception as e:
+            logger.warning("migrate: manual_overrides failed for {!r}: {}", old_cat, e)
+
+        try:
+            r = (
+                client.table("grocery_items")
+                .update({"category": new_cat})
+                .eq("category", old_cat)
+                .execute()
+            )
+            count = len(r.data) if isinstance(r.data, list) else 0
+            if count:
+                logger.info("migrate: grocery_items renamed {} rows: {!r} → {!r}", count, old_cat, new_cat)
+        except Exception as e:
+            logger.warning("migrate: grocery_items failed for {!r}: {}", old_cat, e)
 
 
 def _seed_dict_from_supabase() -> None:
@@ -30,6 +60,9 @@ def _seed_dict_from_supabase() -> None:
         from supabase import create_client
 
         client = create_client(s.project_url, s.service_role_key)
+
+        _migrate_old_categories_in_supabase(client)
+
         resp = (
             client.table("manual_overrides")
             .select("item_name_normalized, category")

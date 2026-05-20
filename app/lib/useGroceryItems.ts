@@ -1,6 +1,15 @@
 import { useEffect, useState, useCallback } from "react";
 import { supabase } from "./supabase";
 
+const CATEGORY_MIGRATIONS: Record<string, string> = {
+  'מוצרי חלב וביצים': 'מוצרים לאחסן במקרר',
+};
+
+function migrateItemCategory(item: GroceryItem): GroceryItem {
+  const migrated = CATEGORY_MIGRATIONS[item.category];
+  return migrated ? { ...item, category: migrated } : item;
+}
+
 export interface GroceryItem {
   id: string;
   item_name: string;
@@ -33,7 +42,7 @@ export function useGroceryItems(): UseGroceryItemsResult {
     if (fetchError) {
       setError(fetchError.message);
     } else {
-      setItems(data as GroceryItem[]);
+      setItems((data as GroceryItem[]).map(migrateItemCategory));
       setError(null);
     }
     setLoading(false);
@@ -74,9 +83,8 @@ export function useGroceryItems(): UseGroceryItemsResult {
           { event: "INSERT", schema: "public", table: "grocery_items" },
           (payload) => {
             if (!isInitialized) return;
-            const incoming = payload.new as GroceryItem;
+            const incoming = migrateItemCategory(payload.new as GroceryItem);
             setItems((prev) => {
-              // Prevent duplicates: only add if not already present
               const exists = prev.some((i) => i.id === incoming.id);
               return exists ? prev : [...prev, incoming];
             });
@@ -87,7 +95,7 @@ export function useGroceryItems(): UseGroceryItemsResult {
           { event: "UPDATE", schema: "public", table: "grocery_items" },
           (payload) => {
             if (!isInitialized) return;
-            const updated = payload.new as GroceryItem;
+            const updated = migrateItemCategory(payload.new as GroceryItem);
             setItems((prev) =>
               prev.map((item) =>
                 item.id === updated.id ? updated : item

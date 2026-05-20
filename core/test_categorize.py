@@ -25,9 +25,9 @@ setup_logging(level="DEBUG")
 # ---------------------------------------------------------------------------
 CASES: list[tuple[str, str | None]] = [
     # --- Hebrew core cases ---
-    ("חלב",          "מוצרי חלב וביצים"),
-    ("ביצים",        "מוצרי חלב וביצים"),
-    ("3 ביצים",      "מוצרי חלב וביצים"),   # quantity prefix
+    ("חלב",          "מוצרים לאחסן במקרר"),
+    ("ביצים",        "מוצרים לאחסן במקרר"),
+    ("3 ביצים",      "מוצרים לאחסן במקרר"),   # quantity prefix
     ("עגבניות",      "ירקות ופירות"),
     ("לחם",          "לחם"),
     ("פיתות",        "לחם"),
@@ -51,12 +51,12 @@ CASES: list[tuple[str, str | None]] = [
     ("",             FALLBACK_CATEGORY),    # empty → fallback
     ("   ",          FALLBACK_CATEGORY),    # whitespace only → fallback
     ("xyzzy12345",   None),                 # unknown item → anything non-empty
-    ("3 יוגורט",     "מוצרי חלב וביצים"),  # Hebrew with quantity
-    ("יוגורט 200g",  "מוצרי חלב וביצים"),  # Hebrew with English suffix
+    ("3 יוגורט",     "מוצרים לאחסן במקרר"),  # Hebrew with quantity
+    ("יוגורט 200g",  "מוצרים לאחסן במקרר"),  # Hebrew with English suffix
 
     # --- Known tricky items (category-bias regression) ---
     ("טונה",         "מוצרים יבשים ושימורים"),
-    ("גבינה צהובה",  "מוצרי חלב וביצים"),
+    ("גבינה צהובה",  "מוצרים לאחסן במקרר"),
     ("נוזל לכלים",   "ניקיון"),
     ("נייר טואלט",   "ניקיון"),
 ]

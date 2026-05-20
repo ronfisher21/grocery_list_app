@@ -136,7 +136,7 @@ describe('Categorization Error Handling (Issue #1)', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        category: 'מוצרי חלב וביצים',
+        category: 'מוצרים לאחסן במקרר',
         quantity: null,
       }),
     });
@@ -160,7 +160,7 @@ describe('Categorization Error Handling (Issue #1)', () => {
 
     expect(response.ok).toBe(true);
     const data = await response.json();
-    expect(data.category).toBe('מוצרי חלב וביצים');
+    expect(data.category).toBe('מוצרים לאחסן במקרר');
   });
 
   it('should not skip update when category is FALLBACK after error recovery', () => {

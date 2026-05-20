@@ -13,6 +13,7 @@ from typing import Any
 
 from loguru import logger
 
+from core.prompts import migrate_category
 from core.settings import get_settings
 
 # In-memory fallback when Supabase is not configured
@@ -60,7 +61,7 @@ def get_by_key(normalized_key: str) -> str | None:
     client = _client()
     if client is None:
         entry = _store.get(normalized_key)
-        out = entry[0] if entry else None
+        out = migrate_category(entry[0]) if entry else None
         logger.info(
             "override get_by_key: in-memory store, key=%r -> %s",
             normalized_key,
@@ -79,7 +80,7 @@ def get_by_key(normalized_key: str) -> str | None:
         if data and len(data) > 0:
             row = data[0]
             cat = row.get("category") if isinstance(row, dict) else None
-            out = str(cat) if isinstance(cat, str) else None
+            out = migrate_category(str(cat)) if isinstance(cat, str) else None
             logger.info(
                 "override get_by_key: Supabase, key=%r -> HIT %r",
                 normalized_key,
@@ -114,7 +115,7 @@ def get_5_latest() -> list[tuple[str, str]]:
         out: list[tuple[str, str]] = []
         for key in reversed(_order):
             if key in _store:
-                out.append((key, _store[key][0]))
+                out.append((key, migrate_category(_store[key][0])))
                 if len(out) >= 5:
                     break
         return out
@@ -134,7 +135,7 @@ def get_5_latest() -> list[tuple[str, str]]:
             k = row.get("item_name_normalized")
             v = row.get("category")
             if isinstance(k, str) and isinstance(v, str):
-                result.append((k, v))
+                result.append((k, migrate_category(v)))
         _latest_cache = (result, now + _LATEST_CACHE_TTL)
         return result
     except Exception as e:

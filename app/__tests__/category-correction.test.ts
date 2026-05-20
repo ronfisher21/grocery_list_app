@@ -37,21 +37,21 @@ describe('Category Correction Flow', () => {
 
   it('POSTs item_name and category to /categorize/override', async () => {
     const { correctCategory } = useCorrectCategory();
-    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרי חלב וביצים' });
+    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרים לאחסן במקרר' });
     expect(mockFetch).toHaveBeenCalledWith(
       'http://localhost:8000/categorize/override',
       expect.objectContaining({
         method: 'POST',
-        body: JSON.stringify({ item_name: 'חלב', category: 'מוצרי חלב וביצים' }),
+        body: JSON.stringify({ item_name: 'חלב', category: 'מוצרים לאחסן במקרר' }),
       })
     );
   });
 
   it('updates grocery_items row with the new category', async () => {
     const { correctCategory } = useCorrectCategory();
-    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרי חלב וביצים' });
+    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרים לאחסן במקרר' });
     expect(mockUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ category: 'מוצרי חלב וביצים' })
+      expect.objectContaining({ category: 'מוצרים לאחסן במקרר' })
     );
     expect(mockEq).toHaveBeenCalledWith('id', '123');
   });
@@ -59,7 +59,7 @@ describe('Category Correction Flow', () => {
   it('still updates grocery_items even if backend call throws', async () => {
     mockFetch.mockRejectedValueOnce(new Error('network error'));
     const { correctCategory } = useCorrectCategory();
-    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרי חלב וביצים' });
+    await correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרים לאחסן במקרר' });
     expect(mockUpdate).toHaveBeenCalled();
   });
 
@@ -67,7 +67,7 @@ describe('Category Correction Flow', () => {
     mockEq.mockResolvedValueOnce({ error: { message: 'db error' } });
     const { correctCategory } = useCorrectCategory();
     await expect(
-      correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרי חלב וביצים' })
+      correctCategory({ itemId: '123', itemName: 'חלב', newCategory: 'מוצרים לאחסן במקרר' })
     ).resolves.not.toThrow();
   });
 });

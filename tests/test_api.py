@@ -28,7 +28,7 @@ def test_full_flow_override_then_categorize_from_cache():
     # Layer 3: save user correction (feedback loop)
     r = client.post(
         "/categorize/override",
-        json={"item_name": "חלב", "category": "מוצרי חלב וביצים"},
+        json={"item_name": "חלב", "category": "מוצרים לאחסן במקרר"},
     )
     assert r.status_code == 200
     data = r.json()
@@ -38,12 +38,12 @@ def test_full_flow_override_then_categorize_from_cache():
     # Layer 1: categorize same item -> must come from cache (override we just saved)
     r = client.post("/categorize", json={"item_name": "חלב"})
     assert r.status_code == 200
-    assert r.json()["category"] == "מוצרי חלב וביצים"
+    assert r.json()["category"] == "מוצרים לאחסן במקרר"
 
     # Normalized key: extra spaces still hit cache
     r = client.post("/categorize", json={"item_name": "  חלב  "})
     assert r.status_code == 200
-    assert r.json()["category"] == "מוצרי חלב וביצים"
+    assert r.json()["category"] == "מוצרים לאחסן במקרר"
 
 
 def test_new_item_should_not_be_cached():

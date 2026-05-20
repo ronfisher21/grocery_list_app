@@ -48,7 +48,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => ['מוצרי חלב וביצים'], // array, not object
+      json: async () => ['מוצרים לאחסן במקרר'], // array, not object
     });
 
     const response = await fetch('http://api/categorize');
@@ -64,7 +64,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
     mockFetch.mockResolvedValueOnce({
       ok: true,
       status: 200,
-      json: async () => 'מוצרי חלב וביצים', // string, not object
+      json: async () => 'מוצרים לאחסן במקרר', // string, not object
     });
 
     const response = await fetch('http://api/categorize');
@@ -146,7 +146,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        category: ['מוצרי חלב וביצים'], // array, not string
+        category: ['מוצרים לאחסן במקרר'], // array, not string
       }),
     });
 
@@ -162,7 +162,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        category: { name: 'מוצרי חלב וביצים' }, // object, not string
+        category: { name: 'מוצרים לאחסן במקרר' }, // object, not string
       }),
     });
 
@@ -212,7 +212,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        category: 'מוצרי חלב וביצים',
+        category: 'מוצרים לאחסן במקרר',
         quantity: 2,
         extra_field_1: 'should be ignored',
         extra_field_2: { nested: 'data' },
@@ -224,7 +224,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
     const data = await response.json();
 
     // Should extract only category and ignore extras
-    expect(data.category).toBe('מוצרי חלב וביצים');
+    expect(data.category).toBe('מוצרים לאחסן במקרר');
     expect(data.quantity).toBe(2);
     expect(data.extra_field_1).toBe('should be ignored');
     // Application should use data.category and ignore others
@@ -232,7 +232,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
 
   it('should validate category is valid Hebrew string', async () => {
     const validCategories = [
-      'מוצרי חלב וביצים',
+      'מוצרים לאחסן במקרר',
       'ירקות ופירות',
       'שתייה',
       'ניקיון',
@@ -267,7 +267,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
       ok: true,
       status: 200,
       json: async () => ({
-        category: 'מוצרי חלב וביצים',
+        category: 'מוצרים לאחסן במקרר',
         error: 'some error message',
       }),
     });
@@ -276,7 +276,7 @@ describe('Response Parsing Robustness (Issue #4)', () => {
     const data = await response.json();
 
     // Should use category even if error field is present
-    expect(data.category).toBe('מוצרי חלב וביצים');
+    expect(data.category).toBe('מוצרים לאחסן במקרר');
     // The presence of an error field might indicate a problem,
     // but if category is valid, we should use it
   });

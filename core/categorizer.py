@@ -16,6 +16,7 @@ from core.prompts import (
     ALLOWED_CATEGORIES,
     FALLBACK_CATEGORY,
     build_system_prompt_with_overrides,
+    migrate_category,
 )
 from core.settings import get_settings
 
@@ -128,7 +129,7 @@ def _sanitize_category(raw: str) -> str:
     Returns:
         Valid category string or empty if not recognized.
     """
-    s = (raw or "").strip().rstrip(".")
+    s = migrate_category((raw or "").strip().rstrip("."))
     if s in ALLOWED_CATEGORIES:
         return s
     # Allow match ignoring trailing punctuation

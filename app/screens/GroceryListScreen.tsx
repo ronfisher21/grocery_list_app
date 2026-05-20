@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -14,9 +14,16 @@ import {
   UIManager,
   View,
 } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import DraggableFlatList, {
+  ScaleDecorator,
+  RenderItemParams,
+} from 'react-native-draggable-flatlist';
 import { useGroceryItems, GroceryItem } from '../lib/useGroceryItems';
 import { supabase } from '../lib/supabase';
 import { useCorrectCategory } from '../hooks/useCorrectCategory';
+
+const ITEM_ORDERS_KEY = 'grocery_item_orders';
 
 if (
   Platform.OS === 'android' &&
@@ -33,7 +40,7 @@ const CATEGORIES = [
   'חטיפים',
   'מוצרים יבשים ושימורים',
   'שתייה',
-  'מוצרי חלב וביצים',
+  'מוצרים לאחסן במקרר',
   'בשר עוף ודגים',
   'לחם',
   'מוצרים לבית',
@@ -42,6 +49,14 @@ const CATEGORIES = [
 ] as const;
 
 const FALLBACK_CATEGORY = 'מוצרים יבשים ושימורים';
+
+const CATEGORY_MIGRATIONS: Record<string, string> = {
+  'מוצרי חלב וביצים': 'מוצרים לאחסן במקרר',
+};
+
+function migrateCategory(cat: string): string {
+  return CATEGORY_MIGRATIONS[cat] ?? cat;
+}
 
 interface SuggestItem {
   name: string;
@@ -96,6 +111,8 @@ function ItemRow({
   isCategorizing,
   categorizationError,
   onRetryCategories,
+  drag,
+  isActive,
 }: {
   item: GroceryItem;
   onToggleCheck: (item: GroceryItem) => void;
@@ -109,12 +126,21 @@ function ItemRow({
   isCategorizing?: boolean;
   categorizationError?: string;
   onRetryCategories?: () => void;
+  drag?: () => void;
+  isActive?: boolean;
 }) {
   return (
-    <View style={styles.itemRow}>
+    <TouchableOpacity
+      activeOpacity={1}
+      onLongPress={drag}
+      delayLongPress={200}
+      style={[styles.itemRow, isActive && styles.itemRowActive]}
+    >
       <TouchableOpacity
         style={styles.deleteButton}
         onPress={() => onDelete(item)}
+        onLongPress={drag}
+        delayLongPress={200}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         <Text style={styles.deleteIcon}>✕</Text>
@@ -123,6 +149,8 @@ function ItemRow({
       <TouchableOpacity
         style={styles.checkButton}
         onPress={() => onToggleCheck(item)}
+        onLongPress={drag}
+        delayLongPress={200}
       >
         <Text style={styles.checkIcon}>○</Text>
       </TouchableOpacity>
@@ -143,6 +171,8 @@ function ItemRow({
         <TouchableOpacity
           style={styles.itemNameButton}
           onPress={() => onStartEdit(item)}
+          onLongPress={drag}
+          delayLongPress={200}
         >
           <Text style={styles.itemName}>{item.item_name}</Text>
         </TouchableOpacity>
@@ -152,6 +182,8 @@ function ItemRow({
         <TouchableOpacity
           style={[styles.categoryBadge, { backgroundColor: '#ff6b6b' }]}
           onPress={onRetryCategories}
+          onLongPress={drag}
+          delayLongPress={200}
         >
           <Text style={styles.categoryBadgeText}>⚠️</Text>
         </TouchableOpacity>
@@ -163,11 +195,13 @@ function ItemRow({
         <TouchableOpacity
           style={styles.categoryBadge}
           onPress={() => onEditCategory(item)}
+          onLongPress={drag}
+          delayLongPress={200}
         >
           <Text style={styles.categoryBadgeText}>{item.category}</Text>
         </TouchableOpacity>
       )}
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -218,6 +252,51 @@ export default function GroceryListScreen() {
   const suggestTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputBarBottom, setInputBarBottom] = useState(0);
 
+  // Per-category drag order: category -> ordered item IDs
+  const [orderedItemIds, setOrderedItemIds] = useState<Record<string, string[]>>({});
+
+  useEffect(() => {
+    AsyncStorage.getItem(ITEM_ORDERS_KEY).then((json) => {
+      if (json) {
+        try {
+          const parsed: Record<string, string[]> = JSON.parse(json);
+          const migrated: Record<string, string[]> = {};
+          for (const [key, val] of Object.entries(parsed)) {
+            const newKey = migrateCategory(key);
+            migrated[newKey] = migrated[newKey]
+              ? [...migrated[newKey], ...val]
+              : val;
+          }
+          setOrderedItemIds(migrated);
+        } catch {}
+      }
+    });
+  }, []);
+
+  const getOrderedUnchecked = useCallback(
+    (unchecked: GroceryItem[], category: string): GroceryItem[] => {
+      const savedIds = orderedItemIds[category];
+      if (!savedIds?.length) return unchecked;
+      const map = new Map(unchecked.map((i) => [i.id, i]));
+      const ordered = savedIds.filter((id) => map.has(id)).map((id) => map.get(id)!);
+      const added = unchecked.filter((i) => !savedIds.includes(i.id));
+      return [...ordered, ...added];
+    },
+    [orderedItemIds],
+  );
+
+  const handleReorder = useCallback(
+    (category: string, reorderedItems: GroceryItem[]) => {
+      const newIds = reorderedItems.map((i) => i.id);
+      setOrderedItemIds((prev) => {
+        const next = { ...prev, [category]: newIds };
+        AsyncStorage.setItem(ITEM_ORDERS_KEY, JSON.stringify(next));
+        return next;
+      });
+    },
+    [],
+  );
+
   // Categorization failure tracking: itemId -> error message
   const [failedCategorizations, setFailedCategorizations] = useState<Map<string, string>>(
     new Map(),
@@ -242,7 +321,7 @@ export default function GroceryListScreen() {
           const res = await fetch(apiUrl);
           if (!res.ok) return;
           const data: SuggestItem[] = await res.json();
-          setSuggestions(data);
+          setSuggestions(data.map((s) => ({ ...s, category: migrateCategory(s.category) })));
         } catch {
           // Suggestions are best-effort; never block the user
         }
@@ -352,7 +431,7 @@ export default function GroceryListScreen() {
       if (!res.ok) {
         const errorMsg = `HTTP ${res.status}`;
         console.error('[callCategorizeEndpoint] HTTP error:', errorMsg);
-        setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]);
+        setFailedCategorizations((prev) => new Map([...prev, [itemId, errorMsg]]));
         setPendingCategorizations((prev) => {
           const next = new Set(prev);
           next.delete(itemId);
@@ -389,7 +468,7 @@ export default function GroceryListScreen() {
         return;
       }
 
-      const category = data.category;
+      const category = migrateCategory(data.category);
       console.log('[callCategorizeEndpoint] Returned category:', category);
 
       // Validate category type and value
@@ -578,6 +657,10 @@ export default function GroceryListScreen() {
     });
   };
 
+  const getAllCategories = (): (typeof CATEGORIES)[number][] => {
+    return [...CATEGORIES];
+  };
+
   const grouped = groupByCategory(items);
 
   if (loading && items.length === 0) {
@@ -671,23 +754,32 @@ export default function GroceryListScreen() {
             <View style={styles.categorySection}>
               <Text style={styles.categoryHeader}>{group.category}</Text>
 
-              {group.unchecked.map((item) => (
-                <ItemRow
-                  key={item.id}
-                  item={item}
-                  onToggleCheck={handleToggleCheck}
-                  onEditCategory={setEditingItem}
-                  onDelete={handleDelete}
-                  isEditing={editingItemId === item.id}
-                  editText={editText}
-                  onStartEdit={startEditing}
-                  onEditTextChange={setEditText}
-                  onEditSubmit={saveEdit}
-                  isCategorizing={pendingCategorizations.has(item.id)}
-                  categorizationError={failedCategorizations.get(item.id)}
-                  onRetryCategories={() => retryCategorizationForItem(item.id, item.item_name)}
-                />
-              ))}
+              <DraggableFlatList
+                data={getOrderedUnchecked(group.unchecked, group.category)}
+                keyExtractor={(item) => item.id}
+                scrollEnabled={false}
+                onDragEnd={({ data }) => handleReorder(group.category, data)}
+                renderItem={({ item, drag, isActive }: RenderItemParams<GroceryItem>) => (
+                  <ScaleDecorator>
+                    <ItemRow
+                      item={item}
+                      drag={drag}
+                      isActive={isActive}
+                      onToggleCheck={handleToggleCheck}
+                      onEditCategory={setEditingItem}
+                      onDelete={handleDelete}
+                      isEditing={editingItemId === item.id}
+                      editText={editText}
+                      onStartEdit={startEditing}
+                      onEditTextChange={setEditText}
+                      onEditSubmit={saveEdit}
+                      isCategorizing={pendingCategorizations.has(item.id)}
+                      categorizationError={failedCategorizations.get(item.id)}
+                      onRetryCategories={() => retryCategorizationForItem(item.id, item.item_name)}
+                    />
+                  </ScaleDecorator>
+                )}
+              />
 
               {group.checked.length > 0 && (
                 <>
@@ -729,7 +821,7 @@ export default function GroceryListScreen() {
           <View style={styles.modalContent}>
             <Text style={styles.modalTitle}>בחרו קטגוריה</Text>
             <FlatList
-              data={CATEGORIES as unknown as string[]}
+              data={getAllCategories()}
               keyExtractor={(cat) => cat}
               renderItem={({ item: cat }) => (
                 <TouchableOpacity
@@ -825,6 +917,14 @@ const styles = StyleSheet.create({
     padding: 12,
     marginBottom: 6,
     gap: 14,
+  },
+  itemRowActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    backgroundColor: '#f0f7ff',
   },
   deleteButton: {
     width: 28,
